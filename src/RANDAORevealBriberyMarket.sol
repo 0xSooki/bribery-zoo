@@ -16,6 +16,7 @@ contract RANDAORevealBriberyMarket {
         The second mapping has a boolean key value indicating for/against (0/1 or withhold/publish the tail block)
         The value of the second mapping is the offered bribe
     */
+
     mapping(uint256 => mapping(bool => bribe)) allOfferedBribes;
 
     // Let's keep track of each user balances
@@ -36,11 +37,7 @@ contract RANDAORevealBriberyMarket {
 
     // The corrupt validator reveals prematurely its RANDAO reveal in epochNumber
     // This EIP should help in implementing the BLS verification logic: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2537.md
-    function revealRANDAO(
-        uint256 epochNumber,
-        bytes32 randaoReveal,
-        uint256[4] memory pubKey
-    ) public {
+    function revealRANDAO(uint256 epochNumber, bytes32 randaoReveal, uint256[4] memory pubKey) public {
         // We need to verify the BLS signature (the RandaoReveal is a BLS signature on the epoch number)
         require(true);
         RANDAOReveals[epochNumber] = randaoReveal;
@@ -51,9 +48,7 @@ contract RANDAORevealBriberyMarket {
         require(success && hOut.length == 128, "Hash mapping failed");
     }
 
-    function convertPublicKeyToG1(
-        bytes memory pubKey
-    ) public view returns (bytes memory) {
+    function convertPublicKeyToG1(bytes memory pubKey) public view returns (bytes memory) {
         require(pubKey.length == 48, "pubKey must be exactly 48 bytes");
         bytes memory input = new bytes(64);
 
@@ -70,28 +65,19 @@ contract RANDAORevealBriberyMarket {
     // The boolean function argument this funtcion needs is an indication of the bribing strategy
     // In this case the strategy space is just binary: publish or withhold the block
     function offerBribe(uint256 epochNumber, bool publishBlock) public payable {
-        allOfferedBribes[epochNumber][publishBlock] = bribe({
-            briber: msg.sender,
-            value: msg.value
-        });
+        allOfferedBribes[epochNumber][publishBlock] = bribe({briber: msg.sender, value: msg.value});
         balances[msg.sender] += msg.value;
     }
 
     // This function must be called in Slot 30 of the given epoch
     function preCheck(uint256 _epochNumber) public {
-        whatHappened[_epochNumber] = epochState({
-            epochNumber: _epochNumber,
-            randaoRevealEpoch30: block.prevrandao,
-            publishedBlock31: false
-        });
+        whatHappened[_epochNumber] =
+            epochState({epochNumber: _epochNumber, randaoRevealEpoch30: block.prevrandao, publishedBlock31: false});
     }
 
     // This function must be called in Slot 1 of the next epoch after the bribe happened
     function postCheck(uint256 _epochNumber) public {
-        if (
-            block.prevrandao - uint256(RANDAOReveals[_epochNumber]) ==
-            whatHappened[_epochNumber].randaoRevealEpoch30
-        ) {
+        if (block.prevrandao - uint256(RANDAOReveals[_epochNumber]) == whatHappened[_epochNumber].randaoRevealEpoch30) {
             whatHappened[_epochNumber].publishedBlock31 = true;
         }
     }
