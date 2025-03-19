@@ -51,6 +51,21 @@ contract RANDAORevealBriberyMarket {
         require(success && hOut.length == 128, "Hash mapping failed");
     }
 
+    function convertPublicKeyToG1(
+        bytes memory pubKey
+    ) public view returns (bytes memory) {
+        require(pubKey.length == 48, "pubKey must be exactly 48 bytes");
+        bytes memory input = new bytes(64);
+
+        for (uint256 i = 0; i < 48; i++) {
+            input[i + 16] = pubKey[i];
+        }
+
+        (bool success, bytes memory g1Point) = address(0x10).staticcall(input);
+        require(success && g1Point.length == 128, "Mapping to G1 failed");
+        return g1Point;
+    }
+
     // This function must be called by market participants offering their bribes
     // The boolean function argument this funtcion needs is an indication of the bribing strategy
     // In this case the strategy space is just binary: publish or withhold the block
