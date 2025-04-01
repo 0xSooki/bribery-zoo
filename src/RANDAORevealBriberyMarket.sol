@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {BLS} from "./BLS.sol";
+import {BLS} from "solady/src/utils/ext/ithaca/BLS.sol";
 
 contract RANDAORevealBriberyMarket {
     // Let's first just handle the case for a single tail slot
@@ -18,6 +18,13 @@ contract RANDAORevealBriberyMarket {
         The second mapping has a boolean key value indicating for/against (0/1 or withhold/publish the tail block)
         The value of the second mapping is the offered bribe
     */
+
+    BLS.G1Point NEG_G1_GENERATOR = BLS.G1Point(
+        bytes32(uint256(31827880280837800241567138048534752271)),
+        bytes32(uint256(88385725958748408079899006800036250932223001591707578097800747617502997169851)),
+        bytes32(uint256(22997279242622214937712647648895181298)),
+        bytes32(uint256(46816884707101390882112958134453447585552332943769894357249934112654335001290))
+    );
 
     mapping(uint256 => mapping(bool => bribe)) allOfferedBribes;
 
@@ -39,62 +46,25 @@ contract RANDAORevealBriberyMarket {
 
     // The corrupt validator reveals prematurely its RANDAO reveal in epochNumber
     // This EIP should help in implementing the BLS verification logic: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2537.md
-    function revealRANDAO(
-        uint256 epochNumber,
-        bytes32 randaoReveal,
-        uint256[4] memory pubKey
-    ) public {
-        // We need to verify the BLS signature (the RandaoReveal is a BLS signature on the epoch number)
-        require(true);
-        RANDAOReveals[epochNumber] = randaoReveal;
-        // maybe we could/should emit an event here?
-
-        bytes memory mIn = abi.encodePacked(uint256(0), randaoReveal); // 64 bytes: 32 zeros || 32-byte message
-        (bool success, bytes memory hOut) = address(0x10).staticcall(mIn);
-        require(success && hOut.length == 128, "Hash mapping failed");
-    }
-
-    function convertPublicKeyToG1(
-        bytes memory pubKey
-    ) public view returns (bytes memory) {
-        require(pubKey.length == 48, "pubKey must be exactly 48 bytes");
-        bytes memory input = new bytes(64);
-
-        for (uint256 i = 0; i < 48; i++) {
-            input[i + 16] = pubKey[i];
-        }
-
-        (bool success, bytes memory g1Point) = address(0x10).staticcall(input);
-        require(success && g1Point.length == 128, "Mapping to G1 failed");
-        return g1Point;
-    }
+    function revealRANDAO(uint256 epochNumber, bytes32 randaoReveal, uint256[4] memory pubKey) public {}
 
     // This function must be called by market participants offering their bribes
     // The boolean function argument this funtcion needs is an indication of the bribing strategy
     // In this case the strategy space is just binary: publish or withhold the block
     function offerBribe(uint256 epochNumber, bool publishBlock) public payable {
-        allOfferedBribes[epochNumber][publishBlock] = bribe({
-            briber: msg.sender,
-            value: msg.value
-        });
+        allOfferedBribes[epochNumber][publishBlock] = bribe({briber: msg.sender, value: msg.value});
         balances[msg.sender] += msg.value;
     }
 
     // This function must be called in Slot 30 of the given epoch
     function preCheck(uint256 _epochNumber) public {
-        whatHappened[_epochNumber] = epochState({
-            epochNumber: _epochNumber,
-            randaoRevealEpoch30: block.prevrandao,
-            publishedBlock31: false
-        });
+        whatHappened[_epochNumber] =
+            epochState({epochNumber: _epochNumber, randaoRevealEpoch30: block.prevrandao, publishedBlock31: false});
     }
 
     // This function must be called in Slot 1 of the next epoch after the bribe happened
     function postCheck(uint256 _epochNumber) public {
-        if (
-            block.prevrandao - uint256(RANDAOReveals[_epochNumber]) ==
-            whatHappened[_epochNumber].randaoRevealEpoch30
-        ) {
+        if (block.prevrandao - uint256(RANDAOReveals[_epochNumber]) == whatHappened[_epochNumber].randaoRevealEpoch30) {
             whatHappened[_epochNumber].publishedBlock31 = true;
         }
     }
