@@ -11,8 +11,12 @@ contract BLSVerify {
         bytes32(uint256(46816884707101390882112958134453447585552332943769894357249934112654335001290))
     );
 
-    function verify(bytes memory msg, BLS.G2Point memory sig, BLS.G1Point memory pubKey) public view returns (bool) {
-        BLS.G2Point memory hmsg = BLS.hashToG2(msg);
+    function verify(bytes memory message, BLS.G2Point memory sig, BLS.G1Point memory pubKey)
+        public
+        view
+        returns (bool)
+    {
+        BLS.G2Point memory hmsg = BLS.hashToG2(message);
 
         BLS.G1Point[] memory g1points = new BLS.G1Point[](2);
         BLS.G2Point[] memory g2points = new BLS.G2Point[](2);
