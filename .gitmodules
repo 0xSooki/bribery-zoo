@@ -4,3 +4,6 @@
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/vectorized/solady
+[submodule "consensus-specs"]
+	path = consensus-specs
+	url = git@github.com:ethereum/consensus-specs.git
