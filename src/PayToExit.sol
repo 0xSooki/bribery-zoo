@@ -30,14 +30,15 @@ contract PayToExit {
         BLS.G2Point calldata signature,
         bytes memory message,
         bytes32[] calldata depositProof,
-        bytes32 depositRoot
+        bytes32 depositRoot,
+        uint64 deposit_count
     ) external {
         require(address(this).balance >= bribeAmount, "PayToExit: Insufficient contract balance for this bribe.");
         require(!bribeTaken[validatorIndex], "PayToExit: Bribe already taken for this validator index.");
 
         bytes32 pubkeyHash = keccak256(abi.encodePacked(pubkey.x_a, pubkey.x_b, pubkey.x_a, pubkey.y_b));
         require(
-            verifyDepositProof(pubkeyHash, validatorIndex, depositProof, depositRoot),
+            verifyDepositProof(deposit_count, pubkeyHash, validatorIndex, depositProof, depositRoot),
             "PayToExit: Invalid deposit proof."
         );
 
@@ -52,22 +53,26 @@ contract PayToExit {
         }
     }
 
-    function verifyDepositProof(bytes32 leaf, uint256 index, bytes32[] calldata proof, bytes32 root)
-        internal
-        pure
-        returns (bool)
-    {
-        bytes32 computedHash = leaf;
+    function verifyDepositProof(
+        uint64 deposit_count,
+        bytes32 leaf,
+        uint256 index,
+        bytes32[] calldata proof,
+        bytes32 root
+    ) internal pure returns (bool) {
+        bytes32 node = leaf;
         for (uint256 i = 0; i < proof.length; i++) {
             bytes32 proofElement = proof[i];
             if ((index & 1) == 0) {
-                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
+                node = sha256(abi.encodePacked(node, proofElement));
             } else {
-                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+                node = sha256(abi.encodePacked(proofElement, node));
             }
             index = index >> 1;
         }
-        return computedHash == root;
+
+        bytes32 result = sha256(abi.encodePacked(node, to_little_endian_64(deposit_count), bytes24(0)));
+        return result == root;
     }
 
     function depositFunds() public payable onlyOwner {
@@ -87,5 +92,18 @@ contract PayToExit {
 
     function epoch() public view returns (uint256) {
         return block.timestamp / 12 / 32;
+    }
+
+    function to_little_endian_64(uint64 value) internal pure returns (bytes memory ret) {
+        ret = new bytes(8);
+        bytes8 bytesValue = bytes8(value);
+        ret[0] = bytesValue[7];
+        ret[1] = bytesValue[6];
+        ret[2] = bytesValue[5];
+        ret[3] = bytesValue[4];
+        ret[4] = bytesValue[3];
+        ret[5] = bytesValue[2];
+        ret[6] = bytesValue[1];
+        ret[7] = bytesValue[0];
     }
 }
