@@ -102,7 +102,6 @@ contract BLSVerifyTest is Test {
             scalars[0] = privKeys[i];
             sigs[i] = BLS.msm(hm, scalars);
 
-            BLS.G1Point[] memory pubKey = new BLS.G1Point[](1);
             pubKeys[i] = BLS.msm(g1gen, scalars);
         }
 
@@ -140,7 +139,6 @@ contract BLSVerifyTest is Test {
             scalars[0] = privKeys[i];
             sigs[i] = BLS.msm(hm, scalars);
 
-            BLS.G1Point[] memory pubKey = new BLS.G1Point[](1);
             pubKeys[i] = BLS.msm(g1gen, scalars);
         }
 
