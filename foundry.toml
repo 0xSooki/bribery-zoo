@@ -4,5 +4,8 @@ out = "out"
 libs = ["lib"]
 evm_version = 'prague'
 remappings = ["forge-std/=lib/forge-std/src", "solady/=lib/solady/"]
+via_ir = true
+optimizer = true
+optimizer_runs = 200
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

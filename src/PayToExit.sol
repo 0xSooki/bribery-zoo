@@ -24,7 +24,7 @@ contract PayToExit {
         owner = msg.sender;
     }
 
-    function acceptBribe(
+    function takeBribe(
         uint256 validatorIndex,
         BLS.G1Point calldata pubkey,
         BLS.G2Point calldata signature,
@@ -36,7 +36,7 @@ contract PayToExit {
         require(address(this).balance >= bribeAmount, "PayToExit: Insufficient contract balance for this bribe.");
         require(!bribeTaken[validatorIndex], "PayToExit: Bribe already taken for this validator index.");
 
-        bytes32 pubkeyHash = keccak256(abi.encodePacked(pubkey.x_a, pubkey.x_b, pubkey.x_a, pubkey.y_b));
+        bytes32 pubkeyHash = sha256(abi.encodePacked(pubkey.x_a, pubkey.x_b, pubkey.y_a, pubkey.y_b));
         require(
             verifyDepositProof(deposit_count, pubkeyHash, validatorIndex, depositProof, depositRoot),
             "PayToExit: Invalid deposit proof."
@@ -90,11 +90,11 @@ contract PayToExit {
         bribeAmount = _newBribeAmount;
     }
 
-    function epoch() public view returns (uint256) {
+    function epoch() internal view returns (uint256) {
         return block.timestamp / 12 / 32;
     }
 
-    function to_little_endian_64(uint64 value) internal pure returns (bytes memory ret) {
+    function to_little_endian_64(uint64 value) public pure returns (bytes memory ret) {
         ret = new bytes(8);
         bytes8 bytesValue = bytes8(value);
         ret[0] = bytesValue[7];
