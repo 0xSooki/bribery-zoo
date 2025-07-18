@@ -7,3 +7,6 @@
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/0xsooki/solady
+[submodule "lib/solidity-rlp-encode"]
+	path = lib/solidity-rlp-encode
+	url = https://github.com/bakaoh/solidity-rlp-encode
