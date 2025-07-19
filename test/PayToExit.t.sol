@@ -5,91 +5,105 @@ import {Test, console} from "forge-std/Test.sol";
 import {PayToExit} from "../src/PayToExit.sol";
 import {BLSVerify} from "../src/BLSVerify.sol";
 import {BLS} from "solady/src/utils/ext/ithaca/BLS.sol";
+import {Utils} from "../src/Utils.sol";
 
 contract PayToExitTest is Test {
     PayToExit public payToExit;
+    BLSVerify public blsVerify;
 
     address public owner;
-
-    uint256 constant INITIAL_BRIBE_AMOUNT = 1 ether;
 
     function setUp() public {
         owner = address(this);
 
-        payToExit = new PayToExit{value: 10 ether}(INITIAL_BRIBE_AMOUNT);
+        blsVerify = new BLSVerify();
+        payToExit = new PayToExit(address(blsVerify));
+
+        vm.deal(address(payToExit), 10 ether);
     }
 
-    function testTakeBribeWithMerkleProof() public {
+    function testWithGeneratedData() public {
         uint256 VALIDATOR_INDEX = 3;
+        uint256 TARGET_EPOCH = 1000;
+        uint256 AUCTION_DEADLINE = block.timestamp + 1 days;
         address testValidator = address(0x123);
-        vm.deal(testValidator, 0);
+        vm.deal(testValidator, 2 ether);
 
-        bytes32 privKey = bytes32(uint256(0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef));
-
-        BLS.G1Point memory g1Gen = BLS.G1Point({
-            x_a: bytes32(uint256(31827880280837800241567138048534752271)),
-            x_b: bytes32(uint256(88385725958748408079899006800036250932223001591707578097800747617502997169851)),
-            y_a: bytes32(uint256(11568204302792691131076548377920244452)),
-            y_b: bytes32(uint256(114417265404584670498511149331300188430316142484413708742216858159411894806497))
+        BLS.G1Point memory pubkey = BLS.G1Point({
+            x_a: bytes32(uint256(0x172a59075fca0729b40b2cea5bb9685a)),
+            x_b: bytes32(uint256(0xfdd219e77407e13631664c53b847cdcad45ab174a073aaa4122ad813fa094485)),
+            y_a: bytes32(uint256(0x28e53b49dfb3b48ebd12df0158912b6)),
+            y_b: bytes32(uint256(0xa5036da6204a58275b9ad64acc45e372b0dff305bb6134f9d350a89f75e65ab7))
         });
 
-        BLS.G1Point[] memory g1Points = new BLS.G1Point[](1);
-        bytes32[] memory scalars = new bytes32[](1);
-        g1Points[0] = g1Gen;
-        scalars[0] = privKey;
+        vm.prank(testValidator);
+        payToExit.offerBribe(VALIDATOR_INDEX, TARGET_EPOCH, AUCTION_DEADLINE, pubkey);
 
-        BLS.G1Point memory pubkey = BLS.msm(g1Points, scalars);
-
-        bytes32 pubkeyHash = sha256(abi.encodePacked(pubkey.x_a, pubkey.x_b, pubkey.y_a, pubkey.y_b));
-
-        bytes32[8] memory leaves = [
-            keccak256("leaf0"),
-            keccak256("leaf1"),
-            keccak256("leaf2"),
-            pubkeyHash,
-            keccak256("leaf4"),
-            keccak256("leaf5"),
-            keccak256("leaf6"),
-            keccak256("leaf7")
-        ];
-
-        bytes32[4] memory level2 = [
-            sha256(abi.encodePacked(leaves[0], leaves[1])),
-            sha256(abi.encodePacked(leaves[2], leaves[3])),
-            sha256(abi.encodePacked(leaves[4], leaves[5])),
-            sha256(abi.encodePacked(leaves[6], leaves[7]))
-        ];
-
-        bytes32[2] memory level1 =
-            [sha256(abi.encodePacked(level2[0], level2[1])), sha256(abi.encodePacked(level2[2], level2[3]))];
-
-        bytes32 merkleRoot = sha256(abi.encodePacked(level1[0], level1[1]));
+        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(VALIDATOR_INDEX);
+        assertEq(auction.validatorIndex, VALIDATOR_INDEX);
+        assertEq(auction.epoch, TARGET_EPOCH);
+        assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
+        assertFalse(auction.exited);
+        assertFalse(auction.claimed);
 
         bytes32[] memory proof = new bytes32[](3);
-        proof[0] = leaves[2];
-        proof[1] = level2[0];
-        proof[2] = level1[1];
-
-        bytes memory message = abi.encodePacked("exit_validator_", VALIDATOR_INDEX);
-
-        BLS.G2Point[] memory g2Points = new BLS.G2Point[](1);
-        g2Points[0] = BLS.hashToG2(message);
-
-        BLS.G2Point memory signature = BLS.msm(g2Points, scalars);
+        proof[0] = 0x5038da95330ba16edb486954197e37eb777c3047327ca54df4199c35c5edc17a; // sibling of pubkeyHash
+        proof[1] = 0x884ff14f19d1564614ab3184d7bdc35a1a9ff90d36ac962b05a81aeb56027c22; // sibling at level 2
+        proof[2] = 0x423df0391558d15d7edb0b74f742870f953b0d2780b1d50c04959264f2ea8c56; // sibling at level 1
 
         uint64 deposit_count = 8;
-        bytes32 expectedRoot =
-            sha256(abi.encodePacked(merkleRoot, payToExit.to_little_endian_64(deposit_count), bytes24(0)));
+        bytes32 finalRoot = 0x3021ed18f9e4390c7cfc3636070193ab943f05aa6405a7901b39b2c693c70409;
 
-        uint256 initBalance = address(payToExit).balance;
-        uint256 validatorInitBalance = testValidator.balance;
-        assertFalse(payToExit.bribeTaken(VALIDATOR_INDEX));
+        BLS.G2Point memory signature = BLS.G2Point({
+            x_c0_a: bytes32(uint256(0x30cd2be741127aa49885ae2e28f5d14)),
+            x_c0_b: bytes32(uint256(0x2aefc0d9b2a6ce83770d55323113a558e96542882d6cebdd9d127b012955d1a7)),
+            x_c1_a: bytes32(uint256(0x4f0cdd385ec70411bbcb3d37e774737)),
+            x_c1_b: bytes32(uint256(0xbf1c259252fd5c7e2b5bb17da8b5e269a0502f7c213d8a9df70409869f232e19)),
+            y_c0_a: bytes32(uint256(0x10c7a20238c4b7842fb10aeb14ce22b1)),
+            y_c0_b: bytes32(uint256(0x549590ad738cc114081e764ef8df46450c91c92a17d78cb2ce4d0ec314c057b3)),
+            y_c1_a: bytes32(uint256(0xe4cd964223ba4213c9b65fd0d808a06)),
+            y_c1_b: bytes32(uint256(0x3d282d4b770ee6795f085414fc0c47738cd3a149c6c308569a041f7e6b0464bd))
+        });
+
+        bytes32 expectedSigningRoot = 0x9c342ac63f66c104652488a4f85abb3da68be15f620bd7a1c92ae2869fd9ccdc;
+
+        bytes32 contractSigningRoot = Utils.compute_signing_root(
+            TARGET_EPOCH, VALIDATOR_INDEX, payToExit.MAINNET_FORK_VERSION(), payToExit.MAINNET_GENESIS_VALIDATORS_ROOT()
+        );
+
+        assertEq(contractSigningRoot, expectedSigningRoot, "Signing root mismatch between Python and Solidity");
+
+        bytes memory message = abi.encodePacked(contractSigningRoot);
 
         vm.prank(testValidator);
-        payToExit.takeBribe(VALIDATOR_INDEX, pubkey, signature, message, proof, expectedRoot, deposit_count);
+        payToExit.submitExitProof(VALIDATOR_INDEX, signature, message, proof, deposit_count, finalRoot);
+    }
 
-        assertTrue(payToExit.bribeTaken(VALIDATOR_INDEX));
-        assertEq(address(payToExit).balance, initBalance - INITIAL_BRIBE_AMOUNT);
-        assertEq(testValidator.balance, validatorInitBalance + INITIAL_BRIBE_AMOUNT);
+    function testSigningRootComputation() public view {
+        uint256 VALIDATOR_INDEX = 3;
+        uint256 TARGET_EPOCH = 1000;
+
+        bytes32 expectedSigningRoot = 0x9c342ac63f66c104652488a4f85abb3da68be15f620bd7a1c92ae2869fd9ccdc;
+
+        bytes32 computedSigningRoot = Utils.compute_signing_root(
+            TARGET_EPOCH, VALIDATOR_INDEX, payToExit.MAINNET_FORK_VERSION(), payToExit.MAINNET_GENESIS_VALIDATORS_ROOT()
+        );
+
+        assertEq(computedSigningRoot, expectedSigningRoot, "Signing root computation failed");
+    }
+
+    function testMerkleProofVerification() public pure {
+        bytes32 pubkeyHash = 0x478ec687f9165ca245227a73f5fa7b17227e53f36fe6dcd6864b5e13d1163d46;
+
+        bytes32[] memory proof = new bytes32[](3);
+        proof[0] = 0x5038da95330ba16edb486954197e37eb777c3047327ca54df4199c35c5edc17a;
+        proof[1] = 0x884ff14f19d1564614ab3184d7bdc35a1a9ff90d36ac962b05a81aeb56027c22;
+        proof[2] = 0x423df0391558d15d7edb0b74f742870f953b0d2780b1d50c04959264f2ea8c56;
+
+        bytes32 expectedRoot = 0x3021ed18f9e4390c7cfc3636070193ab943f05aa6405a7901b39b2c693c70409;
+
+        console.log("Python pubkey hash:", vm.toString(pubkeyHash));
+        console.log("Python final root: ", vm.toString(expectedRoot));
+        console.log("Merkle proof data loaded from Python!");
     }
 }

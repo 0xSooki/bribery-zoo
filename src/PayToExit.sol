@@ -3,54 +3,110 @@ pragma solidity ^0.8.13;
 
 import {BLS} from "solady/src/utils/ext/ithaca/BLS.sol";
 import {BLSVerify} from "./BLSVerify.sol";
+import {Utils} from "./Utils.sol";
 
 contract PayToExit {
-    uint256 public bribeAmount;
-    mapping(uint256 => bool) public bribeTaken;
+    using Utils for *;
 
-    BLSVerify public blsVerifyInstance;
+    struct VoluntaryExit {
+        uint256 epoch;
+        uint256 validator_index;
+    }
+
+    struct ValidatorAuction {
+        uint256 epoch;
+        uint256 validatorIndex;
+        bool exited;
+        bool claimed;
+        uint256 auctionDeadline;
+        BLS.G1Point pubkey;
+    }
+
+    // Mainnet constants
+    bytes4 public constant MAINNET_FORK_VERSION = 0x04000000;
+    bytes32 public constant MAINNET_GENESIS_VALIDATORS_ROOT =
+        0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95;
+    bytes4 public constant DOMAIN_VOLUNTARY_EXIT = 0x04000000;
+
+    BLSVerify public immutable blsVerifyInstance;
     address public owner;
 
+    mapping(uint256 => ValidatorAuction) public validatorAuctions;
+    mapping(address => uint256) public balances;
+
     modifier onlyOwner() {
-        require(msg.sender == owner, "PayToExit: Caller is not the owner");
+        require(msg.sender == owner, "Not the owner");
         _;
     }
 
-    constructor(uint256 _initialBribeAmount) payable {
-        require(_initialBribeAmount > 0, "PayToExit: Bribe amount must be positive");
-        bribeAmount = _initialBribeAmount;
-
-        blsVerifyInstance = new BLSVerify();
+    constructor(address _blsVerify) {
         owner = msg.sender;
+        blsVerifyInstance = BLSVerify(_blsVerify);
     }
 
-    function takeBribe(
+    /**
+     * @notice Create an auction for a validator to exit
+     * @param validatorIndex The validator index
+     * @param targetEpoch The epoch by which the validator should exit
+     * @param auctionDeadline When the auction ends
+     * @param pubkey The validator's public key
+     */
+    function offerBribe(uint256 validatorIndex, uint256 targetEpoch, uint256 auctionDeadline, BLS.G1Point memory pubkey)
+        external
+    {
+        require(auctionDeadline > block.timestamp, "Auction deadline must be in future");
+        require(targetEpoch > getCurrentEpoch(), "Target epoch must be in future");
+
+        validatorAuctions[validatorIndex] = ValidatorAuction({
+            epoch: targetEpoch,
+            validatorIndex: validatorIndex,
+            exited: false,
+            claimed: false,
+            auctionDeadline: auctionDeadline,
+            pubkey: pubkey
+        });
+    }
+
+    /**
+     * @notice Submit proof that a validator has exited
+     * @param validatorIndex The validator index
+     * @param signature The BLS signature for the voluntary exit
+     * @param message The signed message for the voluntary exit
+     * @param depositProof Merkle proof of the validator's deposit
+     * @param deposit_count The number of deposits in the tree
+     */
+    function submitExitProof(
         uint256 validatorIndex,
-        BLS.G1Point calldata pubkey,
         BLS.G2Point calldata signature,
         bytes memory message,
         bytes32[] calldata depositProof,
-        bytes32 depositRoot,
-        uint64 deposit_count
+        uint64 deposit_count,
+        bytes32 root
     ) external {
-        require(address(this).balance >= bribeAmount, "PayToExit: Insufficient contract balance for this bribe.");
-        require(!bribeTaken[validatorIndex], "PayToExit: Bribe already taken for this validator index.");
+        ValidatorAuction storage auction = validatorAuctions[validatorIndex];
+        require(!auction.claimed, "Already claimed");
 
-        bytes32 pubkeyHash = sha256(abi.encodePacked(pubkey.x_a, pubkey.x_b, pubkey.y_a, pubkey.y_b));
+        // Verify the deposit proof
+        bytes32 pubkeyHash =
+            sha256(abi.encodePacked(auction.pubkey.x_a, auction.pubkey.x_b, auction.pubkey.y_a, auction.pubkey.y_b));
         require(
-            verifyDepositProof(deposit_count, pubkeyHash, validatorIndex, depositProof, depositRoot),
-            "PayToExit: Invalid deposit proof."
+            verifyDepositProof(deposit_count, pubkeyHash, validatorIndex, depositProof, root), "Invalid deposit proof"
         );
 
-        require(blsVerifyInstance.verify(message, signature, pubkey), "PayToExit: Invalid BLS signature.");
+        bytes32 signingRoot = Utils.compute_signing_root(
+            auction.epoch, validatorIndex, MAINNET_FORK_VERSION, MAINNET_GENESIS_VALIDATORS_ROOT
+        );
 
-        bribeTaken[validatorIndex] = true;
+        // Verify the BLS signature for the voluntary exit
+        require(
+            blsVerifyInstance.verify(abi.encodePacked(signingRoot), signature, auction.pubkey), "Invalid BLS signature"
+        );
+    }
 
-        (bool success,) = msg.sender.call{value: bribeAmount}("");
-        if (!success) {
-            bribeTaken[validatorIndex] = false;
-            revert("PayToExit: Bribe payment transfer failed.");
-        }
+    function takeBribe(uint256 validatorIndex) external {
+        ValidatorAuction storage auction = validatorAuctions[validatorIndex];
+        require(!auction.claimed, "Already claimed");
+        require(auction.exited || block.timestamp > auction.auctionDeadline, "Auction not resolved");
     }
 
     function verifyDepositProof(
@@ -71,39 +127,27 @@ contract PayToExit {
             index = index >> 1;
         }
 
-        bytes32 result = sha256(abi.encodePacked(node, to_little_endian_64(deposit_count), bytes24(0)));
+        bytes32 result = sha256(abi.encodePacked(node, Utils._to_little_endian64(deposit_count), bytes24(0)));
         return result == root;
     }
 
-    function depositFunds() public payable onlyOwner {
-        require(msg.value > 0, "PayToExit: Deposit amount must be greater than zero.");
+    function depositFunds() external payable {
+        balances[msg.sender] += msg.value;
     }
 
-    function withdrawFunds(uint256 _amount) public onlyOwner {
-        require(address(this).balance >= _amount, "PayToExit: Not enough funds to withdraw.");
-        (bool success,) = owner.call{value: _amount}("");
-        require(success, "PayToExit: Ether withdrawal failed.");
+    function withdrawFunds() external {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No funds to withdraw");
+
+        balances[msg.sender] = 0;
+        payable(msg.sender).transfer(amount);
     }
 
-    function updateBribeAmount(uint256 _newBribeAmount) public onlyOwner {
-        require(_newBribeAmount > 0, "PayToExit: New bribe amount must be positive");
-        bribeAmount = _newBribeAmount;
-    }
-
-    function epoch() internal view returns (uint256) {
+    function getCurrentEpoch() public view returns (uint256) {
         return block.timestamp / 12 / 32;
     }
 
-    function to_little_endian_64(uint64 value) public pure returns (bytes memory ret) {
-        ret = new bytes(8);
-        bytes8 bytesValue = bytes8(value);
-        ret[0] = bytesValue[7];
-        ret[1] = bytesValue[6];
-        ret[2] = bytesValue[5];
-        ret[3] = bytesValue[4];
-        ret[4] = bytesValue[3];
-        ret[5] = bytesValue[2];
-        ret[6] = bytesValue[1];
-        ret[7] = bytesValue[0];
+    function getAuction(uint256 validatorIndex) external view returns (ValidatorAuction memory) {
+        return validatorAuctions[validatorIndex];
     }
 }
