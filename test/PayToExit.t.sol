@@ -73,10 +73,8 @@ contract PayToExitTest is Test {
 
         assertEq(contractSigningRoot, expectedSigningRoot, "Signing root mismatch between Python and Solidity");
 
-        bytes memory message = abi.encodePacked(contractSigningRoot);
-
         vm.prank(testValidator);
-        payToExit.submitExitProof(VALIDATOR_INDEX, signature, message, proof, deposit_count, finalRoot);
+        payToExit.submitExitProof(VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
     }
 
     function testSigningRootComputation() public view {

@@ -35,7 +35,7 @@ contract PayToBiasTestable is PayToBias {
      * @param parentHeader The header of block N-1 (before validator's slot)
      * @param nextHeader The header of block N+1 (after validator's slot)
      */
-    function submitProof(
+    function takeBribe(
         uint256 blockNumber,
         HeaderVerify.BlockHeader memory parentHeader,
         HeaderVerify.BlockHeader memory nextHeader

@@ -21,7 +21,6 @@ contract PayToBias {
 
     HeaderVerify public immutable headerVerify;
     address public owner;
-    uint256 public bribeAmount;
     uint256 public constant BLOCK_TIME = 12; // 12 seconds per block
 
     mapping(uint256 => ValidatorAuction) public validatorAuctions;
@@ -90,7 +89,7 @@ contract PayToBias {
      * @param parentHeader The header of block N-1 (before validator's slot)
      * @param nextHeader The header of block N (the one being auctioned)
      */
-    function submitProof(
+    function takeBribe(
         uint256 blockNumber,
         HeaderVerify.BlockHeader memory parentHeader,
         HeaderVerify.BlockHeader memory nextHeader
@@ -128,22 +127,6 @@ contract PayToBias {
         _resolveAuction(blockNumber);
     }
 
-    /**
-     * @notice Claim that the validator failed to publish (withholding) - fallback method
-     * @param blockNumber The block number to claim withholding for
-     */
-    function claimWithholding(uint256 blockNumber) external {
-        ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        require(auction.validator != address(0), "Auction does not exist");
-        require(!auction.published, "Block was published");
-        require(!auction.claimed, "Already claimed");
-
-        // Must be past the auction deadline
-        require(block.timestamp > auction.auctionDeadline, "Auction still active");
-
-        _resolveAuction(blockNumber);
-    }
-
     function _resolveAuction(uint256 blockNumber) internal virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
 
@@ -161,19 +144,6 @@ contract PayToBias {
         if (losingBid.bidder != address(0)) {
             balances[losingBid.bidder] += losingBid.amount;
         }
-    }
-
-    function takeBribe(uint256 blockNumber) external {
-        ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        require(auction.validator == msg.sender, "Not the validator");
-        require(!auction.claimed, "Already claimed");
-        require(auction.published || block.timestamp > auction.auctionDeadline, "Auction not resolved");
-
-        _resolveAuction(blockNumber);
-    }
-
-    function updateBribeAmount(uint256 newAmount) external onlyOwner {
-        bribeAmount = newAmount;
     }
 
     function depositFunds() external payable {

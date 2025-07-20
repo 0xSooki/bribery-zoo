@@ -137,7 +137,7 @@ contract PayToBiasTest is Test {
         uint256 validatorBalanceBefore = validator.balance;
 
         vm.prank(validator);
-        payToBias.submitProof(BLOCK_NUMBER, parentHeader, validatorHeader);
+        payToBias.takeBribe(BLOCK_NUMBER, parentHeader, validatorHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
         assertTrue(auction.published);
@@ -215,7 +215,7 @@ contract PayToBiasTest is Test {
 
         uint256 validatorBalanceBefore = validator.balance;
 
-        payToBias.submitProof(BLOCK_NUMBER, parentHeader, nextHeader);
+        payToBias.takeBribe(BLOCK_NUMBER, parentHeader, nextHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
         assertFalse(auction.published);
