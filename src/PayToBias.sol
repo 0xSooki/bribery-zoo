@@ -77,10 +77,6 @@ contract PayToBias {
 
         highestBids[blockNumber][publishChoice] =
             Bid({bidder: msg.sender, amount: msg.value, publishChoice: publishChoice});
-
-        if (msg.value > bribeAmount) {
-            bribeAmount = msg.value;
-        }
     }
 
     /**
