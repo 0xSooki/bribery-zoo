@@ -20,6 +20,8 @@ contract PayToExit {
         bool claimed;
         uint256 auctionDeadline;
         BLS.G1Point pubkey;
+        uint256 bribeAmount;
+        address creator;
     }
 
     // Mainnet constants
@@ -53,6 +55,7 @@ contract PayToExit {
      */
     function offerBribe(uint256 validatorIndex, uint256 targetEpoch, uint256 auctionDeadline, BLS.G1Point memory pubkey)
         external
+        payable
     {
         require(auctionDeadline > block.timestamp, "Auction deadline must be in future");
         require(targetEpoch > getCurrentEpoch(), "Target epoch must be in future");
@@ -63,7 +66,9 @@ contract PayToExit {
             exited: false,
             claimed: false,
             auctionDeadline: auctionDeadline,
-            pubkey: pubkey
+            pubkey: pubkey,
+            bribeAmount: msg.value,
+            creator: msg.sender
         });
     }
 
@@ -71,18 +76,16 @@ contract PayToExit {
      * @notice Submit proof that a validator has exited
      * @param validatorIndex The validator index
      * @param signature The BLS signature for the voluntary exit
-     * @param message The signed message for the voluntary exit
      * @param depositProof Merkle proof of the validator's deposit
      * @param deposit_count The number of deposits in the tree
      */
     function submitExitProof(
         uint256 validatorIndex,
         BLS.G2Point calldata signature,
-        bytes memory message,
         bytes32[] calldata depositProof,
         uint64 deposit_count,
         bytes32 root
-    ) external {
+    ) public view {
         ValidatorAuction storage auction = validatorAuctions[validatorIndex];
         require(!auction.claimed, "Already claimed");
 
@@ -103,10 +106,27 @@ contract PayToExit {
         );
     }
 
-    function takeBribe(uint256 validatorIndex) external {
+    function takeBribe(
+        uint256 validatorIndex,
+        BLS.G2Point calldata signature,
+        bytes32[] calldata depositProof,
+        uint64 deposit_count,
+        bytes32 root
+    ) external {
         ValidatorAuction storage auction = validatorAuctions[validatorIndex];
         require(!auction.claimed, "Already claimed");
-        require(auction.exited || block.timestamp > auction.auctionDeadline, "Auction not resolved");
+
+        submitExitProof(validatorIndex, signature, depositProof, deposit_count, root);
+
+        auction.exited = true;
+
+        require(block.timestamp < auction.auctionDeadline, "Auction not resolved");
+
+        if (auction.exited) {
+            payable(msg.sender).transfer(auction.bribeAmount);
+        } else {
+            payable(auction.creator).transfer(auction.bribeAmount);
+        }
     }
 
     function verifyDepositProof(
