@@ -22,19 +22,10 @@ library Utils {
         bytes4 forkVersion,
         bytes32 genesisValidatorsRoot
     ) public pure returns (bytes32) {
-        bytes32 voluntaryExitRoot = compute_voluntary_exit_root(
-            epoch,
-            validatorIndex
-        );
+        bytes32 voluntaryExitRoot = compute_voluntary_exit_root(epoch, validatorIndex);
 
-        bytes32 domain = compute_domain(
-            DOMAIN_VOLUNTARY_EXIT,
-            MAINNET_FORK_VERSION,
-            genesisValidatorsRoot
-        );
-        bytes32 signingRoot = sha256(
-            abi.encodePacked(voluntaryExitRoot, domain)
-        );
+        bytes32 domain = compute_domain(DOMAIN_VOLUNTARY_EXIT, MAINNET_FORK_VERSION, genesisValidatorsRoot);
+        bytes32 signingRoot = sha256(abi.encodePacked(voluntaryExitRoot, domain));
 
         return signingRoot;
     }
@@ -45,10 +36,7 @@ library Utils {
      * @param validatorIndex The validator index
      * @return The SSZ hash tree root
      */
-    function compute_voluntary_exit_root(
-        uint256 epoch,
-        uint256 validatorIndex
-    ) internal pure returns (bytes32) {
+    function compute_voluntary_exit_root(uint256 epoch, uint256 validatorIndex) internal pure returns (bytes32) {
         bytes32 epochChunk = pad_to_32_bytes(epoch);
         bytes32 validatorIndexChunk = pad_to_32_bytes(validatorIndex);
 
@@ -75,11 +63,11 @@ library Utils {
      * @param genesisValidatorsRoot The genesis validators root
      * @return domain The computed domain
      */
-    function compute_domain(
-        bytes4 domainType,
-        bytes4 forkVersion,
-        bytes32 genesisValidatorsRoot
-    ) internal pure returns (bytes32 domain) {
+    function compute_domain(bytes4 domainType, bytes4 forkVersion, bytes32 genesisValidatorsRoot)
+        internal
+        pure
+        returns (bytes32 domain)
+    {
         bytes32 forkDataRoot = merkle_root2(forkVersion, genesisValidatorsRoot);
 
         bytes memory domainBytes = new bytes(32);
@@ -106,19 +94,18 @@ library Utils {
 
         uint64 val = uint64(value);
 
-        return
-            bytes8(
-                abi.encodePacked(
-                    uint8(val),
-                    uint8(val >> 8),
-                    uint8(val >> 16),
-                    uint8(val >> 24),
-                    uint8(val >> 32),
-                    uint8(val >> 40),
-                    uint8(val >> 48),
-                    uint8(val >> 56)
-                )
-            );
+        return bytes8(
+            abi.encodePacked(
+                uint8(val),
+                uint8(val >> 8),
+                uint8(val >> 16),
+                uint8(val >> 24),
+                uint8(val >> 32),
+                uint8(val >> 40),
+                uint8(val >> 48),
+                uint8(val >> 56)
+            )
+        );
     }
 
     /**
@@ -127,10 +114,7 @@ library Utils {
      * @param chunk2 Second 32-byte chunk
      * @return Merkle root of the two chunks
      */
-    function merkle_root2(
-        bytes32 chunk1,
-        bytes32 chunk2
-    ) internal pure returns (bytes32) {
+    function merkle_root2(bytes32 chunk1, bytes32 chunk2) internal pure returns (bytes32) {
         return sha256(abi.encodePacked(chunk1, chunk2));
     }
 }
