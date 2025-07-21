@@ -31,7 +31,7 @@ contract PayToBiasTestable is PayToBias {
 
     /**
      * @notice Claim that the validator failed to publish by providing 2-block proof
-     * @param blockNumber The block number the validator should have published
+     * @param blockNumber The block number the validator should have withold
      * @param parentHeader The header of block N-1 (before validator's slot)
      * @param nextHeader The header of block N+1 (after validator's slot)
      */
@@ -42,7 +42,7 @@ contract PayToBiasTestable is PayToBias {
     ) external override {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
         require(auction.validator != address(0), "Auction does not exist");
-        require(!auction.published, "Block was published");
+        require(!auction.withold, "Block was withold");
         require(!auction.claimed, "Already claimed");
 
         // Verify block numbers
@@ -69,9 +69,7 @@ contract PayToBiasTestable is PayToBias {
         uint256 timeGap = nextHeader.timestamp - parentHeader.timestamp;
 
         if (timeGap > BLOCK_TIME + 4) {
-            auction.published = false;
-        } else {
-            auction.published = true;
+            auction.withold = true;
         }
 
         _resolveAuction(blockNumber);

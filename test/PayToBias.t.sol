@@ -39,7 +39,7 @@ contract PayToBiasTest is Test {
         assertEq(auction.validator, validator);
         assertEq(auction.blockNumber, BLOCK_NUMBER);
         assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
-        assertFalse(auction.published);
+        assertFalse(auction.withold);
         assertFalse(auction.claimed);
     }
 
@@ -71,7 +71,7 @@ contract PayToBiasTest is Test {
         payToBias.createAuction(BLOCK_NUMBER, AUCTION_DEADLINE);
 
         vm.prank(bidder1);
-        payToBias.placeBid{value: 1 ether}(BLOCK_NUMBER, true);
+        payToBias.placeBid{value: 1 ether}(BLOCK_NUMBER, false);
 
         // Create parent block header (block N-1)
         HeaderVerify.BlockHeader memory parentHeader = HeaderVerify.BlockHeader({
@@ -136,11 +136,12 @@ contract PayToBiasTest is Test {
 
         uint256 validatorBalanceBefore = validator.balance;
 
+        vm.warp(AUCTION_DEADLINE + 5);
         vm.prank(validator);
         payToBias.takeBribe(BLOCK_NUMBER, parentHeader, validatorHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
-        assertTrue(auction.published);
+        assertFalse(auction.withold);
         assertTrue(auction.claimed);
 
         // Validator should receive the winning bid
@@ -152,7 +153,7 @@ contract PayToBiasTest is Test {
         payToBias.createAuction(BLOCK_NUMBER, AUCTION_DEADLINE);
 
         vm.prank(bidder2);
-        payToBias.placeBid{value: 2 ether}(BLOCK_NUMBER, false);
+        payToBias.placeBid{value: 2 ether}(BLOCK_NUMBER, true);
 
         // Create parent block header (block N-1)
         HeaderVerify.BlockHeader memory parentHeader = HeaderVerify.BlockHeader({
@@ -218,7 +219,7 @@ contract PayToBiasTest is Test {
         payToBias.takeBribe(BLOCK_NUMBER, parentHeader, nextHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
-        assertFalse(auction.published);
+        assertTrue(auction.withold);
         assertTrue(auction.claimed);
 
         // Validator should receive the withhold bid

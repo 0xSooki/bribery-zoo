@@ -7,7 +7,7 @@ contract PayToBias {
     struct ValidatorAuction {
         address validator;
         uint256 blockNumber;
-        bool published;
+        bool withold;
         bool claimed;
         uint256 auctionDeadline;
         bytes32 blockHash;
@@ -49,7 +49,7 @@ contract PayToBias {
         validatorAuctions[blockNumber] = ValidatorAuction({
             validator: msg.sender,
             blockNumber: blockNumber,
-            published: false,
+            withold: false,
             claimed: false,
             auctionDeadline: auctionDeadline,
             blockHash: bytes32(0)
@@ -80,8 +80,8 @@ contract PayToBias {
     }
 
     /**
-     * @notice Submit a proof wheter the validator published or withheld their block
-     * @param blockNumber The block number the validator should have published
+     * @notice Submit a proof wheter the validator withold or withheld their block
+     * @param blockNumber The block number the validator should have withold
      * @param parentHeader The header of block N-1 (before validator's slot)
      * @param nextHeader The header of block N (the one being auctioned)
      */
@@ -92,8 +92,8 @@ contract PayToBias {
     ) external virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
         require(auction.validator != address(0), "Auction does not exist");
-        require(!auction.published, "Block was published");
-        require(!auction.claimed, "Already claimed");
+        // require(!auction.withold, "Block was withold");
+        // require(!auction.claimed, "Already claimed");
 
         require(parentHeader.number == blockNumber - 1, "Invalid parent block number");
         require(nextHeader.number == blockNumber, "Invalid next block number");
@@ -115,9 +115,9 @@ contract PayToBias {
         uint256 timeGap = nextHeader.timestamp - parentHeader.timestamp;
 
         if (timeGap > BLOCK_TIME + 4) {
-            auction.published = false;
+            auction.withold = true;
         } else {
-            auction.published = true;
+            auction.withold = false;
         }
 
         _resolveAuction(blockNumber);
@@ -125,12 +125,15 @@ contract PayToBias {
 
     function _resolveAuction(uint256 blockNumber) internal virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
+        if (!auction.withold && auction.auctionDeadline > block.timestamp) {
+            return;
+        }
 
-        Bid storage publishBid = highestBids[blockNumber][true];
-        Bid storage withholdBid = highestBids[blockNumber][false];
+        Bid storage withholdBid = highestBids[blockNumber][true];
+        Bid storage publishBid = highestBids[blockNumber][false];
 
-        Bid storage winningBid = auction.published ? publishBid : withholdBid;
-        Bid storage losingBid = auction.published ? withholdBid : publishBid;
+        Bid storage winningBid = auction.withold ? withholdBid : publishBid;
+        Bid storage losingBid = auction.withold ? publishBid : withholdBid;
 
         if (winningBid.bidder != address(0)) {
             payable(auction.validator).transfer(winningBid.amount);
@@ -168,7 +171,7 @@ contract PayToBias {
 
     function canClaim(uint256 blockNumber) external view returns (bool) {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        return !auction.claimed && (auction.published || block.timestamp > auction.auctionDeadline);
+        return !auction.claimed && (auction.withold || block.timestamp > auction.auctionDeadline);
     }
 
     /**
