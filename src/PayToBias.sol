@@ -125,9 +125,10 @@ contract PayToBias {
 
     function _resolveAuction(uint256 blockNumber) internal virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        if (!auction.withold && auction.auctionDeadline > block.timestamp) {
-            return;
-        }
+        require(
+            auction.withold || (auction.auctionDeadline < block.timestamp),
+            "Block was either not witheld or not yet over deadline"
+        );
 
         Bid storage withholdBid = highestBids[blockNumber][true];
         Bid storage publishBid = highestBids[blockNumber][false];
