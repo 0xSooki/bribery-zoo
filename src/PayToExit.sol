@@ -147,7 +147,7 @@ contract PayToExit {
             index = index >> 1;
         }
 
-        bytes32 result = sha256(abi.encodePacked(node, Utils._to_little_endian64(deposit_count), bytes24(0)));
+        bytes32 result = sha256(abi.encodePacked(node, Utils.to_little_endian64(deposit_count), bytes24(0)));
         return result == root;
     }
 

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {RLPEncode} from "lib/solidity-rlp-encode/contracts/RLPEncode.sol";
+import {LibRLP} from "solady/src/utils/LibRLP.sol";
 
 contract HeaderVerify {
-    using RLPEncode for *;
+    using LibRLP for *;
 
     /**
      * @notice Block header structure for Cancun-era (post-Deneb) Ethereum blocks
@@ -58,30 +58,19 @@ contract HeaderVerify {
      * @return RLP-encoded header bytes
      */
     function encodeHeader(BlockHeader memory header) internal pure returns (bytes memory) {
-        bytes[] memory items = new bytes[](21);
-        items[0] = RLPEncode.encodeBytes(abi.encodePacked(header.parentHash));
-        items[1] = RLPEncode.encodeBytes(abi.encodePacked(header.sha3Uncles));
-        items[2] = RLPEncode.encodeAddress(header.miner);
-        items[3] = RLPEncode.encodeBytes(abi.encodePacked(header.stateRoot));
-        items[4] = RLPEncode.encodeBytes(abi.encodePacked(header.transactionsRoot));
-        items[5] = RLPEncode.encodeBytes(abi.encodePacked(header.receiptsRoot));
-        items[6] = RLPEncode.encodeBytes(header.logsBloom);
-        items[7] = RLPEncode.encodeUint(header.difficulty);
-        items[8] = RLPEncode.encodeUint(header.number);
-        items[9] = RLPEncode.encodeUint(header.gasLimit);
-        items[10] = RLPEncode.encodeUint(header.gasUsed);
-        items[11] = RLPEncode.encodeUint(header.timestamp);
-        items[12] = RLPEncode.encodeBytes(header.extraData);
-        items[13] = RLPEncode.encodeBytes(abi.encodePacked(header.mixHash));
-        items[14] = RLPEncode.encodeBytes(abi.encodePacked(header.nonce));
-        items[15] = RLPEncode.encodeUint(header.baseFeePerGas);
-        items[16] = RLPEncode.encodeBytes(abi.encodePacked(header.withdrawalsRoot));
-        items[17] = RLPEncode.encodeUint(header.blobGasUsed);
-        items[18] = RLPEncode.encodeUint(header.excessBlobGas);
-        items[19] = RLPEncode.encodeBytes(abi.encodePacked(header.parentBeaconBlockRoot));
-        items[20] = RLPEncode.encodeBytes(abi.encodePacked(header.requestsHash));
+        LibRLP.List memory list = LibRLP.p().p(abi.encodePacked(header.parentHash)).p(
+            abi.encodePacked(header.sha3Uncles)
+        ).p(header.miner).p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
+            abi.encodePacked(header.receiptsRoot)
+        ).p(header.logsBloom).p(header.difficulty).p(header.number).p(header.gasLimit).p(header.gasUsed).p(
+            header.timestamp
+        ).p(header.extraData).p(abi.encodePacked(header.mixHash)).p(abi.encodePacked(header.nonce)).p(
+            header.baseFeePerGas
+        ).p(abi.encodePacked(header.withdrawalsRoot)).p(header.blobGasUsed).p(header.excessBlobGas).p(
+            abi.encodePacked(header.parentBeaconBlockRoot)
+        ).p(abi.encodePacked(header.requestsHash));
 
-        return RLPEncode.encodeList(items);
+        return LibRLP.encode(list);
     }
 
     /**

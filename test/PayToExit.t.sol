@@ -74,7 +74,7 @@ contract PayToExitTest is Test {
         assertEq(contractSigningRoot, expectedSigningRoot, "Signing root mismatch between Python and Solidity");
 
         vm.prank(testValidator);
-        payToExit.submitExitProof(VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
+        payToExit.takeBribe(VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
     }
 
     function testSigningRootComputation() public view {
