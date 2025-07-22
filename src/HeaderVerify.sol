@@ -2,15 +2,17 @@
 pragma solidity ^0.8.13;
 
 import {LibRLP} from "solady/src/utils/LibRLP.sol";
+import {Blockhash} from "openzeppelin/utils/BlockHash.sol";
 
 contract HeaderVerify {
     using LibRLP for *;
-
+    using Blockhash for *;
     /**
      * @notice Block header structure for Cancun-era (post-Deneb) Ethereum blocks
      * https://github.com/ethereum/go-ethereum/blob/a9061cfd77a26634d459f824793335ea73be14da/core/types/block.go#L75
      * @dev Contains all 21 fields as defined in the Cancun hard fork
      */
+
     struct BlockHeader {
         bytes32 parentHash;
         bytes32 sha3Uncles;
@@ -43,9 +45,6 @@ contract HeaderVerify {
      * @dev This contract only supports Cancun-era (21-field) block headers
      */
     function verifyBlockHash(BlockHeader memory header, bytes32 expectedHash) public pure returns (bool) {
-        // Validate nonce for PoS era (must be zero since Cancun is post-merge)
-        require(header.nonce == 0x0000000000000000, "Invalid nonce for Cancun era");
-
         bytes memory encoded = encodeHeader(header);
         bytes32 hash = keccak256(encoded);
         return hash == expectedHash;
@@ -58,9 +57,8 @@ contract HeaderVerify {
      * @return RLP-encoded header bytes
      */
     function encodeHeader(BlockHeader memory header) internal pure returns (bytes memory) {
-        LibRLP.List memory list = LibRLP.p().p(abi.encodePacked(header.parentHash)).p(
-            abi.encodePacked(header.sha3Uncles)
-        ).p(header.miner).p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
+        bytes memory encoded = LibRLP.p().p(abi.encodePacked(header.parentHash)).p(abi.encodePacked(header.sha3Uncles))
+            .p(header.miner).p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
             abi.encodePacked(header.receiptsRoot)
         ).p(header.logsBloom).p(header.difficulty).p(header.number).p(header.gasLimit).p(header.gasUsed).p(
             header.timestamp
@@ -68,9 +66,9 @@ contract HeaderVerify {
             header.baseFeePerGas
         ).p(abi.encodePacked(header.withdrawalsRoot)).p(header.blobGasUsed).p(header.excessBlobGas).p(
             abi.encodePacked(header.parentBeaconBlockRoot)
-        ).p(abi.encodePacked(header.requestsHash));
+        ).p(abi.encodePacked(header.requestsHash)).encode();
 
-        return LibRLP.encode(list);
+        return encoded;
     }
 
     /**
@@ -84,7 +82,7 @@ contract HeaderVerify {
         require(header.number < block.number, "Cannot verify future blocks");
         require(block.number - header.number <= 256, "Block too old for blockhash verification");
 
-        bytes32 onChainHash = blockhash(header.number);
+        bytes32 onChainHash = Blockhash.blockHash(header.number);
         require(onChainHash != 0, "Blockhash not available");
 
         return verifyBlockHash(header, onChainHash);
