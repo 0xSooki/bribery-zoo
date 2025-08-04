@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {LibRLP} from "solady/src/utils/LibRLP.sol";
-import {Blockhash} from "openzeppelin-contracts/contracts/utils/BlockHash.sol";
+import {Blockhash} from "@openzeppelin/contracts/utils/BlockHash.sol";
 
 contract HeaderVerify {
     using LibRLP for *;
