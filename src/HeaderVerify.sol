@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {LibRLP} from "solady/src/utils/LibRLP.sol";
-import {Blockhash} from "openzeppelin/utils/BlockHash.sol";
+import {Blockhash} from "openzeppelin-contracts/contracts/utils/BlockHash.sol";
 
 contract HeaderVerify {
     using LibRLP for *;
@@ -44,7 +44,10 @@ contract HeaderVerify {
      * @return True if the computed hash matches the expected hash
      * @dev This contract only supports Cancun-era (21-field) block headers
      */
-    function verifyBlockHash(BlockHeader memory header, bytes32 expectedHash) public pure returns (bool) {
+    function verifyBlockHash(
+        BlockHeader memory header,
+        bytes32 expectedHash
+    ) public pure returns (bool) {
         bytes memory encoded = encodeHeader(header);
         bytes32 hash = keccak256(encoded);
         return hash == expectedHash;
@@ -56,17 +59,34 @@ contract HeaderVerify {
      * @param header The block header to encode
      * @return RLP-encoded header bytes
      */
-    function encodeHeader(BlockHeader memory header) internal pure returns (bytes memory) {
-        return LibRLP.p().p(abi.encodePacked(header.parentHash)).p(abi.encodePacked(header.sha3Uncles)).p(header.miner)
-            .p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
-            abi.encodePacked(header.receiptsRoot)
-        ).p(header.logsBloom).p(header.difficulty).p(header.number).p(header.gasLimit).p(header.gasUsed).p(
-            header.timestamp
-        ).p(header.extraData).p(abi.encodePacked(header.mixHash)).p(abi.encodePacked(header.nonce)).p(
-            header.baseFeePerGas
-        ).p(abi.encodePacked(header.withdrawalsRoot)).p(header.blobGasUsed).p(header.excessBlobGas).p(
-            abi.encodePacked(header.parentBeaconBlockRoot)
-        ).p(abi.encodePacked(header.requestsHash)).encode();
+    function encodeHeader(
+        BlockHeader memory header
+    ) internal pure returns (bytes memory) {
+        return
+            LibRLP
+                .p()
+                .p(abi.encodePacked(header.parentHash))
+                .p(abi.encodePacked(header.sha3Uncles))
+                .p(header.miner)
+                .p(abi.encodePacked(header.stateRoot))
+                .p(abi.encodePacked(header.transactionsRoot))
+                .p(abi.encodePacked(header.receiptsRoot))
+                .p(header.logsBloom)
+                .p(header.difficulty)
+                .p(header.number)
+                .p(header.gasLimit)
+                .p(header.gasUsed)
+                .p(header.timestamp)
+                .p(header.extraData)
+                .p(abi.encodePacked(header.mixHash))
+                .p(abi.encodePacked(header.nonce))
+                .p(header.baseFeePerGas)
+                .p(abi.encodePacked(header.withdrawalsRoot))
+                .p(header.blobGasUsed)
+                .p(header.excessBlobGas)
+                .p(abi.encodePacked(header.parentBeaconBlockRoot))
+                .p(abi.encodePacked(header.requestsHash))
+                .encode();
     }
 
     /**
@@ -75,10 +95,15 @@ contract HeaderVerify {
      * @return True if the header matches the on-chain blockhash
      * @dev This function can only verify blocks within the last 256 blocks
      */
-    function verifyAgainstBlockhash(BlockHeader memory header) public view returns (bool) {
+    function verifyAgainstBlockhash(
+        BlockHeader memory header
+    ) public view returns (bool) {
         require(header.number > 0, "Invalid block number");
         require(header.number < block.number, "Cannot verify future blocks");
-        require(block.number - header.number <= 256, "Block too old for blockhash verification");
+        require(
+            block.number - header.number <= 256,
+            "Block too old for blockhash verification"
+        );
 
         bytes32 onChainHash = Blockhash.blockHash(header.number);
         require(onChainHash != 0, "Blockhash not available");
@@ -91,7 +116,9 @@ contract HeaderVerify {
      * @param header The block header to hash
      * @return The computed block hash
      */
-    function getComputedHash(BlockHeader memory header) public pure returns (bytes32) {
+    function getComputedHash(
+        BlockHeader memory header
+    ) public pure returns (bytes32) {
         bytes memory encoded = encodeHeader(header);
         return keccak256(encoded);
     }
