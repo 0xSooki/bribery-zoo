@@ -37,10 +37,9 @@ contract PayToExitTest is Test {
         });
 
         vm.prank(testValidator);
-        payToExit.offerBribe(VALIDATOR_INDEX, TARGET_EPOCH, AUCTION_DEADLINE, pubkey);
+        payToExit.offerBribe(TARGET_EPOCH, AUCTION_DEADLINE, pubkey);
 
-        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(VALIDATOR_INDEX);
-        assertEq(auction.validatorIndex, VALIDATOR_INDEX);
+        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(address(testValidator));
         assertEq(auction.epoch, TARGET_EPOCH);
         assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
         assertFalse(auction.exited);
@@ -74,7 +73,7 @@ contract PayToExitTest is Test {
         assertEq(contractSigningRoot, expectedSigningRoot, "Signing root mismatch between Python and Solidity");
 
         vm.prank(testValidator);
-        payToExit.takeBribe(VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
+        payToExit.takeBribe(address(testValidator), VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
     }
 
     function testSigningRootComputation() public view {
