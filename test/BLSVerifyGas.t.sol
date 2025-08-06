@@ -17,7 +17,7 @@ contract BLSVerifyGasTest is Test {
         console.log("=== Detailed Gas Cost Analysis ===");
         console.log("Messages, Gas Used, Gas per Message");
 
-        for (uint256 n = 1; n <= 25; n++) {
+        for (uint256 n = 1; n <= 500; n++) {
             BLS.G1Point[] memory pubKeys = new BLS.G1Point[](n);
             BLS.G2Point[] memory sigs = new BLS.G2Point[](n);
             bytes32[] memory privKeys = new bytes32[](n);
@@ -64,7 +64,7 @@ contract BLSVerifyGasTest is Test {
         console.log("=== Detailed Gas Cost Analysis ===");
         console.log("Messages, Gas Used, Gas per Message");
 
-        for (uint256 n = 1; n <= 25; n++) {
+        for (uint256 n = 1; n <= 500; n++) {
             BLS.G1Point[] memory pubKeys = new BLS.G1Point[](n);
             BLS.G2Point[] memory sigs = new BLS.G2Point[](n);
             bytes32[] memory privKeys = new bytes32[](n);
