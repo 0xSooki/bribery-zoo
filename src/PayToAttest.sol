@@ -54,9 +54,10 @@ contract PayToAttest {
         auctions[_m] = Auction(_deadline, _aggPubKey, _m, _data, _amount, msg.value);
     }
 
-    function takeBribe(bytes32 _m, BLS.G2Point calldata sig) public {
+    function takeBribe(bytes32 _m, BLS.G2Point calldata sig, address bribee) public {
         bytes32 sigHash = keccak256(abi.encodePacked(sig.x_c0_a, sig.x_c0_b, sig.x_c1_a, sig.x_c1_b));
 
+        require(msg.sender == bribee, "Not the bribee");
         require(!claimed[sigHash], "Already claimed");
 
         Auction memory auction = auctions[_m];
