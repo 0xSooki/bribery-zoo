@@ -1,0 +1,1 @@
+PROPOSER_BOOST = 0.4
