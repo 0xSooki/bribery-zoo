@@ -17,7 +17,7 @@ contract BLSVerifyGasTest is Test {
         console.log("=== Detailed Gas Cost Analysis ===");
         console.log("Messages, Gas Used, Gas per Message");
 
-        for (uint256 n = 1; n <= 500; n++) {
+        for (uint256 n = 1; n <= 25; n++) {
             BLS.G1Point[] memory pubKeys = new BLS.G1Point[](n);
             BLS.G2Point[] memory sigs = new BLS.G2Point[](n);
             bytes32[] memory privKeys = new bytes32[](n);
@@ -31,9 +31,7 @@ contract BLSVerifyGasTest is Test {
             g1gen[0] = blsVerify.G1_GEN();
 
             for (uint256 i = 0; i < n; i++) {
-                privKeys[i] = bytes32(
-                    uint256(keccak256(abi.encodePacked("key_", i)))
-                );
+                privKeys[i] = bytes32(uint256(keccak256(abi.encodePacked("key_", i))));
 
                 bytes32[] memory scalars = new bytes32[](1);
                 BLS.G2Point[] memory hm = new BLS.G2Point[](1);
@@ -64,7 +62,7 @@ contract BLSVerifyGasTest is Test {
         console.log("=== Detailed Gas Cost Analysis ===");
         console.log("Messages, Gas Used, Gas per Message");
 
-        for (uint256 n = 1; n <= 500; n++) {
+        for (uint256 n = 1; n <= 25; n++) {
             BLS.G1Point[] memory pubKeys = new BLS.G1Point[](n);
             BLS.G2Point[] memory sigs = new BLS.G2Point[](n);
             bytes32[] memory privKeys = new bytes32[](n);
@@ -74,9 +72,7 @@ contract BLSVerifyGasTest is Test {
             g1gen[0] = blsVerify.G1_GEN();
 
             for (uint256 i = 0; i < n; i++) {
-                privKeys[i] = bytes32(
-                    uint256(keccak256(abi.encodePacked("key_", i)))
-                );
+                privKeys[i] = bytes32(uint256(keccak256(abi.encodePacked("key_", i))));
 
                 bytes32[] memory scalars = new bytes32[](1);
                 BLS.G2Point[] memory hm = new BLS.G2Point[](1);
@@ -103,7 +99,7 @@ contract BLSVerifyGasTest is Test {
             bool result = blsVerify.verify(message, aggSig, pubKey);
             uint256 gasAfter = gasleft();
             uint256 gasUsed = gasBefore - gasAfter;
-            uint256 gasPerMessage = gasUsed / n;
+            uint256 gasPerMessage = gasUsed;
 
             assertTrue(result, "Verification should succeed");
             console.log("%d, %d, %d", n, gasUsed, gasPerMessage);

@@ -10,7 +10,7 @@ contract PayToExit {
 
     struct VoluntaryExit {
         uint256 epoch;
-        uint256 validator_index;
+        uint256 validatorIndex;
     }
 
     struct ValidatorAuction {
@@ -40,9 +40,9 @@ contract PayToExit {
         _;
     }
 
-    constructor(address _blsVerify) {
+    constructor(address blsVerifyAddress) {
         owner = msg.sender;
-        blsVerifyInstance = BLSVerify(_blsVerify);
+        blsVerifyInstance = BLSVerify(blsVerifyAddress);
     }
 
     /**
@@ -71,14 +71,14 @@ contract PayToExit {
      * @param validatorIndex The validator index
      * @param signature The BLS signature for the voluntary exit
      * @param depositProof Merkle proof of the validator's deposit
-     * @param deposit_count The number of deposits in the tree
+     * @param depositCount The number of deposits in the tree
      * @param auction Auction corresponding to the given briber
      */
     function submitExitProof(
         uint256 validatorIndex,
         BLS.G2Point calldata signature,
         bytes32[] calldata depositProof,
-        uint64 deposit_count,
+        uint64 depositCount,
         bytes32 root,
         ValidatorAuction memory auction
     ) public view {
@@ -86,7 +86,7 @@ contract PayToExit {
         bytes32 pubkeyHash =
             sha256(abi.encodePacked(auction.pubkey.x_a, auction.pubkey.x_b, auction.pubkey.y_a, auction.pubkey.y_b));
         require(
-            verifyDepositProof(deposit_count, pubkeyHash, validatorIndex, depositProof, root), "Invalid deposit proof"
+            verifyDepositProof(depositCount, pubkeyHash, validatorIndex, depositProof, root), "Invalid deposit proof"
         );
 
         bytes32 signingRoot = Utils.compute_signing_root(
@@ -99,18 +99,21 @@ contract PayToExit {
         );
     }
 
+    /**
+     * @notice Claim bribe by providing exit proof
+     */
     function takeBribe(
         address briber,
         uint256 validatorIndex,
         BLS.G2Point calldata signature,
         bytes32[] calldata depositProof,
-        uint64 deposit_count,
+        uint64 depositCount,
         bytes32 root
     ) external {
         ValidatorAuction storage auction = validatorAuctions[briber];
         require(!auction.claimed, "Already claimed");
 
-        submitExitProof(validatorIndex, signature, depositProof, deposit_count, root, auction);
+        submitExitProof(validatorIndex, signature, depositProof, depositCount, root, auction);
 
         auction.exited = true;
 
@@ -123,8 +126,11 @@ contract PayToExit {
         }
     }
 
+    /**
+     * @notice Verify deposit proof for validator
+     */
     function verifyDepositProof(
-        uint64 deposit_count,
+        uint64 depositCount,
         bytes32 leaf,
         uint256 index,
         bytes32[] calldata proof,
@@ -141,14 +147,20 @@ contract PayToExit {
             index = index >> 1;
         }
 
-        bytes32 result = sha256(abi.encodePacked(node, Utils.to_little_endian64(deposit_count), bytes24(0)));
+        bytes32 result = sha256(abi.encodePacked(node, Utils.to_little_endian64(depositCount), bytes24(0)));
         return result == root;
     }
 
+    /**
+     * @notice Deposit funds to contract
+     */
     function depositFunds() external payable {
         balances[msg.sender] += msg.value;
     }
 
+    /**
+     * @notice Withdraw funds from contract
+     */
     function withdrawFunds() external {
         uint256 amount = balances[msg.sender];
         require(amount > 0, "No funds to withdraw");
@@ -157,10 +169,16 @@ contract PayToExit {
         payable(msg.sender).transfer(amount);
     }
 
+    /**
+     * @notice Get current epoch based on timestamp
+     */
     function getCurrentEpoch() public view returns (uint256) {
         return block.timestamp / 12 / 32;
     }
 
+    /**
+     * @notice Get auction details for a briber
+     */
     function getAuction(address briber) external view returns (ValidatorAuction memory) {
         return validatorAuctions[briber];
     }

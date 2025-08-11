@@ -39,7 +39,7 @@ contract PayToBiasTest is Test {
         assertEq(auction.validator, validator);
         assertEq(auction.blockNumber, BLOCK_NUMBER);
         assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
-        assertFalse(auction.withold);
+        assertFalse(auction.withhold);
         assertFalse(auction.claimed);
     }
 
@@ -141,7 +141,7 @@ contract PayToBiasTest is Test {
         payToBias.takeBribe(BLOCK_NUMBER, parentHeader, validatorHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
-        assertFalse(auction.withold);
+        assertFalse(auction.withhold);
         assertTrue(auction.claimed);
 
         // Validator should receive the winning bid
@@ -219,7 +219,7 @@ contract PayToBiasTest is Test {
         payToBias.takeBribe(BLOCK_NUMBER, parentHeader, nextHeader);
 
         PayToBias.ValidatorAuction memory auction = payToBias.getAuction(BLOCK_NUMBER);
-        assertTrue(auction.withold);
+        assertTrue(auction.withhold);
         assertTrue(auction.claimed);
 
         // Validator should receive the withhold bid

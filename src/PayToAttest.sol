@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: UNLICENSED
-
 pragma solidity ^0.8.13;
 
 import {BLSVerify} from "./BLSVerify.sol";
@@ -17,7 +16,7 @@ contract PayToAttest {
 
     struct AttestationData {
         uint256 slot;
-        bytes32 beacon_block_root;
+        bytes32 beaconBlockRoot;
         Checkpoint source;
         Checkpoint target;
     }
@@ -32,47 +31,56 @@ contract PayToAttest {
     }
 
     mapping(bytes32 => Auction) public auctions;
-    mapping(bytes32 => bool) public claimed; // Claimed for the given signature hash
+    mapping(bytes32 => bool) public claimed;
 
     address public owner;
-    BLSVerify public immutable bls;
+    BLSVerify public immutable blsVerify;
 
-    constructor(address _bls) {
+    constructor(address blsVerifyAddress) {
         owner = msg.sender;
-        bls = BLSVerify(_bls);
+        blsVerify = BLSVerify(blsVerifyAddress);
     }
 
+    /**
+     * @notice Create a bribe offer for attestation data
+     */
     function offerBribe(
-        AttestationData calldata _data,
-        BLS.G1Point memory _aggPubKey,
-        uint256 _deadline,
-        bytes32 _m,
-        uint256 _amount
+        AttestationData calldata data,
+        BLS.G1Point memory aggPubKey,
+        uint256 deadline,
+        bytes32 m,
+        uint256 amount
     ) public payable {
-        require(auctions[_m].amount == 0, "Auction already exists");
+        require(auctions[m].amount == 0, "Auction already exists");
 
-        auctions[_m] = Auction(_deadline, _aggPubKey, _m, _data, _amount, msg.value);
+        auctions[m] = Auction(deadline, aggPubKey, m, data, amount, msg.value);
     }
 
-    function takeBribe(bytes32 _m, BLS.G2Point calldata sig, address bribee) public {
+    /**
+     * @notice Claim bribe by providing valid signature
+     */
+    function takeBribe(bytes32 m, BLS.G2Point calldata sig, address bribee) public {
         bytes32 sigHash = keccak256(abi.encodePacked(sig.x_c0_a, sig.x_c0_b, sig.x_c1_a, sig.x_c1_b));
 
         require(msg.sender == bribee, "Not the bribee");
         require(!claimed[sigHash], "Already claimed");
 
-        Auction memory auction = auctions[_m];
+        Auction memory auction = auctions[m];
 
         require(auction.pool - auction.amount >= 0, "Insufficient pool balance");
 
-        require(bls.verify(abi.encodePacked(auction.m), sig, auction.aggPubkey), "Invalid signature");
+        require(blsVerify.verify(abi.encodePacked(auction.m), sig, auction.aggPubkey), "Invalid signature");
         require(block.timestamp < auction.auctionDeadline, "Auction has ended");
 
         claimed[sigHash] = true;
         payable(msg.sender).transfer(auction.amount);
-        auctions[_m].pool -= auction.amount;
+        auctions[m].pool -= auction.amount;
     }
 
-    function getAuction(bytes32 _m) public view returns (Auction memory) {
-        return auctions[_m];
+    /**
+     * @notice Get auction details for a given message hash
+     */
+    function getAuction(bytes32 m) public view returns (Auction memory) {
+        return auctions[m];
     }
 }

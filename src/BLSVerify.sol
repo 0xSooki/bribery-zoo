@@ -4,6 +4,9 @@ pragma solidity ^0.8.13;
 import {BLS} from "solady/src/utils/ext/ithaca/BLS.sol";
 
 contract BLSVerify {
+    /**
+     * @notice Get the generator point for G1
+     */
     function G1_GEN() public pure returns (BLS.G1Point memory) {
         return BLS.G1Point(
             bytes32(uint256(31827880280837800241567138048534752271)),
@@ -13,6 +16,9 @@ contract BLSVerify {
         );
     }
 
+    /**
+     * @notice Get the negated generator point for G1
+     */
     function NEG_G1_GEN() public pure returns (BLS.G1Point memory) {
         return BLS.G1Point(
             bytes32(uint256(31827880280837800241567138048534752271)),
@@ -22,6 +28,9 @@ contract BLSVerify {
         );
     }
 
+    /**
+     * @notice Verify a BLS signature
+     */
     function verify(bytes memory message, BLS.G2Point memory sig, BLS.G1Point memory pubKey)
         public
         view
@@ -40,6 +49,9 @@ contract BLSVerify {
         return BLS.pairing(g1points, g2points);
     }
 
+    /**
+     * @notice Verify an aggregated BLS signature
+     */
     function verifyAgg(bytes[] memory msgs, BLS.G1Point[] memory pubKeys, BLS.G2Point memory aggSig)
         public
         view
