@@ -44,7 +44,7 @@ contract PayToAttestTest is Test {
         // Set up test attestation data
         attestationData = PayToAttest.AttestationData({
             slot: SLOT,
-            beacon_block_root: BEACON_BLOCK_ROOT,
+            beaconBlockRoot: BEACON_BLOCK_ROOT,
             source: PayToAttest.Checkpoint({epoch: SOURCE_EPOCH, root: SOURCE_ROOT}),
             target: PayToAttest.Checkpoint({epoch: TARGET_EPOCH, root: TARGET_ROOT})
         });
@@ -76,7 +76,7 @@ contract PayToAttestTest is Test {
         uint256 bribeeBalance = bidder1.balance;
 
         vm.prank(bidder1);
-        payToAttest.takeBribe(MESSAGE, sig);
+        payToAttest.takeBribe(MESSAGE, sig, bidder1);
 
         bytes32 sigHash = keccak256(abi.encodePacked(sig.x_c0_a, sig.x_c0_b, sig.x_c1_a, sig.x_c1_b));
 
