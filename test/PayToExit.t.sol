@@ -26,8 +26,9 @@ contract PayToExitTest is Test {
         uint256 VALIDATOR_INDEX = 3;
         uint256 TARGET_EPOCH = 1000;
         uint256 AUCTION_DEADLINE = block.timestamp + 1 days;
-        address testValidator = address(0x123);
-        vm.deal(testValidator, 2 ether);
+        address validator = address(0x123);
+        vm.deal(validator, 2 ether);
+        uint64 deposit_count = 4;
 
         BLS.G1Point memory pubkey = BLS.G1Point({
             x_a: bytes32(uint256(0x172a59075fca0729b40b2cea5bb9685a)),
@@ -36,10 +37,10 @@ contract PayToExitTest is Test {
             y_b: bytes32(uint256(0xa5036da6204a58275b9ad64acc45e372b0dff305bb6134f9d350a89f75e65ab7))
         });
 
-        vm.prank(testValidator);
+        vm.prank(validator);
         payToExit.offerBribe(TARGET_EPOCH, AUCTION_DEADLINE, pubkey);
 
-        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(address(testValidator));
+        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(address(validator));
         assertEq(auction.epoch, TARGET_EPOCH);
         assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
         assertFalse(auction.exited);
@@ -50,8 +51,13 @@ contract PayToExitTest is Test {
         proof[1] = 0x884ff14f19d1564614ab3184d7bdc35a1a9ff90d36ac962b05a81aeb56027c22; // sibling at level 2
         proof[2] = 0x423df0391558d15d7edb0b74f742870f953b0d2780b1d50c04959264f2ea8c56; // sibling at level 1
 
-        uint64 deposit_count = 8;
-        bytes32 finalRoot = 0x3021ed18f9e4390c7cfc3636070193ab943f05aa6405a7901b39b2c693c70409;
+        bytes32 depositDataRoot = 0xfbf1ed18f9e4390c7cfc3636070193ab943f05aa6405a7901b39b2c693c70409;
+
+        bytes32 leaf1 = sha256(abi.encodePacked(depositDataRoot, proof[0]));
+        bytes32 leaf2 = sha256(abi.encodePacked(leaf1, proof[1])); // leaf1 goes LEFT (correct for index 0)
+        bytes32 root = sha256(abi.encodePacked(leaf2, proof[2])); // leaf2 goes LEFT (correct for index 0)
+
+        bytes32 finalRoot = sha256(abi.encodePacked(root, Utils.to_little_endian64(deposit_count), bytes24(0)));
 
         BLS.G2Point memory signature = BLS.G2Point({
             x_c0_a: bytes32(uint256(0x30cd2be741127aa49885ae2e28f5d14)),
@@ -72,8 +78,10 @@ contract PayToExitTest is Test {
 
         assertEq(contractSigningRoot, expectedSigningRoot, "Signing root mismatch between Python and Solidity");
 
-        vm.prank(testValidator);
-        payToExit.takeBribe(address(testValidator), VALIDATOR_INDEX, signature, proof, deposit_count, finalRoot);
+        vm.prank(validator);
+        payToExit.takeBribe(
+            address(validator), VALIDATOR_INDEX, 0, signature, proof, depositDataRoot, deposit_count, finalRoot
+        );
     }
 
     function testSigningRootComputation() public view {

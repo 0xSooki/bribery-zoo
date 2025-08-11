@@ -29,7 +29,7 @@ contract PayToExit {
         0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95;
     bytes4 public constant DOMAIN_VOLUNTARY_EXIT = 0x04000000;
 
-    BLSVerify public immutable blsVerifyInstance;
+    BLSVerify public immutable blsVerify;
     address public owner;
 
     mapping(address => ValidatorAuction) public validatorAuctions;
@@ -42,7 +42,7 @@ contract PayToExit {
 
     constructor(address blsVerifyAddress) {
         owner = msg.sender;
-        blsVerifyInstance = BLSVerify(blsVerifyAddress);
+        blsVerify = BLSVerify(blsVerifyAddress);
     }
 
     /**
@@ -53,8 +53,6 @@ contract PayToExit {
      */
     function offerBribe(uint256 targetEpoch, uint256 auctionDeadline, BLS.G1Point memory pubkey) external payable {
         require(auctionDeadline > block.timestamp, "Auction deadline must be in future");
-        require(targetEpoch > getCurrentEpoch(), "Target epoch must be in future");
-
         validatorAuctions[msg.sender] = ValidatorAuction({
             epoch: targetEpoch,
             exited: false,
@@ -67,26 +65,23 @@ contract PayToExit {
     }
 
     /**
-     * @notice Submit proof that a validator has exited
-     * @param validatorIndex The validator index
-     * @param signature The BLS signature for the voluntary exit
-     * @param depositProof Merkle proof of the validator's deposit
-     * @param depositCount The number of deposits in the tree
-     * @param auction Auction corresponding to the given briber
+     * @notice Claim bribe by providing exit proof
      */
-    function submitExitProof(
+    function takeBribe(
+        address briber,
         uint256 validatorIndex,
+        uint64 depositIndex,
         BLS.G2Point calldata signature,
         bytes32[] calldata depositProof,
+        bytes32 depositDataRoot,
         uint64 depositCount,
-        bytes32 root,
-        ValidatorAuction memory auction
-    ) public view {
-        // Verify the deposit proof
-        bytes32 pubkeyHash =
-            sha256(abi.encodePacked(auction.pubkey.x_a, auction.pubkey.x_b, auction.pubkey.y_a, auction.pubkey.y_b));
+        bytes32 root
+    ) external {
+        ValidatorAuction storage auction = validatorAuctions[briber];
+        require(!auction.claimed, "Already claimed");
+
         require(
-            verifyDepositProof(depositCount, pubkeyHash, validatorIndex, depositProof, root), "Invalid deposit proof"
+            verifyDepositProof(depositCount, depositDataRoot, depositIndex, depositProof, root), "Invalid deposit proof"
         );
 
         bytes32 signingRoot = Utils.compute_signing_root(
@@ -94,27 +89,7 @@ contract PayToExit {
         );
 
         // Verify the BLS signature for the voluntary exit
-        require(
-            blsVerifyInstance.verify(abi.encodePacked(signingRoot), signature, auction.pubkey), "Invalid BLS signature"
-        );
-    }
-
-    /**
-     * @notice Claim bribe by providing exit proof
-     */
-    function takeBribe(
-        address briber,
-        uint256 validatorIndex,
-        BLS.G2Point calldata signature,
-        bytes32[] calldata depositProof,
-        uint64 depositCount,
-        bytes32 root
-    ) external {
-        ValidatorAuction storage auction = validatorAuctions[briber];
-        require(!auction.claimed, "Already claimed");
-
-        submitExitProof(validatorIndex, signature, depositProof, depositCount, root, auction);
-
+        require(blsVerify.verify(abi.encodePacked(signingRoot), signature, auction.pubkey), "Invalid BLS signature");
         auction.exited = true;
 
         require(block.timestamp < auction.auctionDeadline, "Auction not resolved");
