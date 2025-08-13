@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
+
+from frozendict import frozendict
 
 
 class Action:
@@ -58,10 +60,8 @@ class OfferBribery(AdvAction):  # phase 1
         - deadline_reward: Amount payed if all verifications were done before the deadline(s)
         - entity: Bribed entity
         - briber: Entity paying/offering the bribe
-        - slot_anchor:
-            - None: no protection
-            - not None: The smart contract will verify whether this tx happened on the given slot
-            or on a branch built on-top of it. If not, only base_reward can be issued
+        - included_slots: The smart contract will verify whether this tx happened on a branch containing these slot numbers. If not, only base_reward can be issued
+        - excluded_slots: The smart contract will verify whether this tx happened on a branch NOT containing any of these slot numbers. If it does, only base_reward can be issued
     """
 
     attests: Sequence[
@@ -72,19 +72,20 @@ class OfferBribery(AdvAction):  # phase 1
     deadline_payback: int
     entity: str
     briber: str
-    slot_anchor: int | None
+    included_slots: frozenset[int]
+    excluded_slots: frozenset[int]
 
 
 @dataclass
-class VerifyOneAttestation(BribeeAction):
+class TakeBribery(BribeeAction):
     reference: OfferBribery
     vote: Vote  # one can construct a vote from the message
     index: int
 
 
 @dataclass(frozen=True)
-class SinglePayToAttestState:
-    original: OfferBribery
+class PayToAttestState:
+    offer_bribery: OfferBribery
     achieved: Sequence[
         bool
     ]  # tracking which voting was achieved on this state of the blockchain
@@ -92,32 +93,71 @@ class SinglePayToAttestState:
         bool
     ]  # tracking whether the verification was done before deadline
     paid: bool
+    extra_funds: bool
 
-    def achieve(self, index: int, before_deadline: bool) -> "SinglePayToAttestState":
+    def achieve(self, index: int, before_deadline: bool) -> "PayToAttestState":
         copy_achieved = list(self.achieved)
         copy_achieved[index] = True
         copy_deadline = list(self.before_deadline)
         copy_deadline[index] = before_deadline
 
-        return SinglePayToAttestState(
-            original=self.original,
+        return PayToAttestState(
+            offer_bribery=self.offer_bribery,
             achieved=tuple(copy_achieved),
             before_deadline=tuple(copy_deadline),
             paid=self.paid,
+            extra_funds=self.extra_funds,
         )
 
-    def pay(self) -> "SinglePayToAttestState":
-        return SinglePayToAttestState(
-            original=self.original,
+    def pay(self, extra_funds: bool) -> "PayToAttestState":
+        return PayToAttestState(
+            offer_bribery=self.offer_bribery,
             achieved=self.achieved,
             before_deadline=self.before_deadline,
             paid=True,
+            extra_funds=extra_funds,
         )
 
 
 @dataclass
-class ProposeBlock(AdvAction, BribeeAction):  # phase 0
+class BuildBlock(AdvAction, BribeeAction):  # phase 0
     slot: int
     parent_slot: int
     pay_to_attests: Sequence[OfferBribery]  # can be empty
-    claims: Sequence[VerifyOneAttestation]
+    claims: Sequence[TakeBribery]
+
+
+@dataclass(frozen=True)
+class WalletState:
+    # has_infinite_money: frozenset[str] = field(default_factory=lambda: HAS_INFINITE_MONEY)
+    address_to_money: frozendict[str, int] = field(default_factory=frozendict)
+
+    def pay(self, from_address: str, to_address: str, amount: int) -> "WalletState":
+        # assert amount > 0
+        # if from_address not in self.has_infinite_money:
+        #    assert self.address_to_money[from_address] >= amount
+        if from_address not in self.address_to_money:
+            self.address_to_money[from_address] = 0
+        new_address_to_money = dict(self.address_to_money)
+        if to_address not in new_address_to_money:
+            new_address_to_money[to_address] = 0
+        new_address_to_money[to_address] += amount
+        new_address_to_money[from_address] -= amount
+        return WalletState(frozendict(new_address_to_money))
+
+
+@dataclass(frozen=True)
+class Block:
+    slot: int
+    parent_slot: int
+    on_time: bool  # proposed in the first 4 seconds of the slot
+
+    wallet_state: WalletState
+    pay_to_attests: frozendict[OfferBribery, PayToAttestState]
+    votes: Sequence[Vote]
+
+
+@dataclass
+class ProposeBlock:
+    slot: int
+    entities: Sequence[str]

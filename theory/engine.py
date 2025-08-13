@@ -1,71 +1,63 @@
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Iterable
 
 from frozendict import frozendict
 
 from theory.action import (
     BaseVote,
+    Block,
     OfferBribery,
-    ProposeBlock,
-    SinglePayToAttestState,
-    VerifyOneAttestation,
+    BuildBlock,
+    PayToAttestState,
+    TakeBribery,
     Vote,
+    WalletState,
 )
-from theory.utils import HAS_INFINITE_MONEY, PROPOSER_BOOST, Slot
+from theory.utils import (
+    ATTESTATORS_PER_SLOT,
+    B,
+    BASE_INCREMENT,
+    PROPOSER_BOOST,
+    Slot,
+    W_p,
+    W_sum,
+    attestation_base_reward,
+)
 
-
-@dataclass(frozen=True)
-class WalletState:
-    # has_infinite_money: frozenset[str] = field(default_factory=lambda: HAS_INFINITE_MONEY)
-    address_to_money: frozendict[str, int] = field(default_factory=frozendict)
-
-    def pay(self, from_address: str, to_address: str, amount: int) -> "WalletState":
-        #assert amount > 0
-        #if from_address not in self.has_infinite_money:
-        #    assert self.address_to_money[from_address] >= amount
-        if from_address not in self.address_to_money:
-            self.address_to_money[from_address] = 0
-        new_address_to_money = dict(self.address_to_money)
-        if to_address not in new_address_to_money:
-            new_address_to_money[to_address] = 0
-        new_address_to_money[to_address] += amount
-        new_address_to_money[from_address] -= amount
-        return WalletState(frozendict(new_address_to_money))
-
-
-@dataclass(frozen=True)
-class Block:
-    slot: int
-    parent_slot: int
-    on_time: bool  # proposed in the first 4 seconds of the slot
-
-    wallet_state: WalletState
-    pay_to_attests: frozendict[OfferBribery, SinglePayToAttestState]
-    votes: Sequence[Vote]
 
 @dataclass(frozen=True)
 class Engine:
     base_head_slot: int
     slot: Slot
 
-    slot_to_alphas: frozendict[int, int]
+    entity_to_alphas: frozendict[str, int]
     slot_to_owner: frozendict[int, str]
     slot_to_votes: frozendict[int, int]
+    slot_to_all_votes: frozendict[int, int]
 
+    knowledge_of_blocks: frozendict[str, frozenset[int]]  # entity -> knowledge of slots
     blocks: frozendict[int, Block]
     # remaining_votes: frozendict[int, frozendict[str, float]]
     counted_votes: frozendict[BaseVote, frozenset[Vote]]
     offer_briberies: frozendict[
         str, frozenset[OfferBribery]
     ]  # entity -> known briberies (offchain)
-    take_briberies: frozendict[str, frozenset[VerifyOneAttestation]]
-    votes: frozenset[Vote]
+    take_briberies: frozendict[str, frozenset[TakeBribery]]
 
-    def head(self) -> int:
+    def change(self, new_data: dict[str, Any]) -> "Engine":
+        data = dict(self.__dict__)  # shallow copy of self's data
+        data.update(new_data)  # adding new data
+        return Engine(**data)
+
+    def head(self, entity: str) -> int:
         slot_to_acc_votes: dict[int, int] = {}
+        knowledge = self.knowledge_of_blocks.get(entity, frozenset()).union(
+            (self.base_head_slot,)
+        )
         for slot, votes in sorted(self.slot_to_votes.items(), key=lambda x: x[0]):
-
+            if slot not in knowledge:
+                continue
             slot_to_acc_votes[slot] = votes
             if slot == self.slot.num and self.blocks[slot].on_time:
                 slot_to_acc_votes[slot] += PROPOSER_BOOST
@@ -76,8 +68,10 @@ class Engine:
                 act_slot = self.blocks[act_slot].parent_slot
 
         slot_to_desc: dict[int, list[int]] = defaultdict(list)
-        for block in self.blocks.values():
-            slot_to_desc[block.parent_slot].append(block.slot)
+        for slot, block in self.blocks.items():
+            if slot in knowledge:
+                assert block.parent_slot in knowledge
+                slot_to_desc[block.parent_slot].append(block.slot)
 
         head = self.base_head_slot
         while head in slot_to_desc:
@@ -88,13 +82,14 @@ class Engine:
 
         return head
 
-    def check_vote(self, new_vote: Vote) -> int | None:
+    @staticmethod
+    def check_vote(votes: Iterable[Vote], new_vote: Vote) -> int | None:
         """
         If double voting happened, returns None
         If not, returns the new added votes
         """
-        base = BaseVote(new_vote.entity, new_vote.from_slot)
-        votes = self.counted_votes.get(base, frozenset())
+        # base = BaseVote(new_vote.entity, new_vote.from_slot)
+        # votes = self.counted_votes.get(base, frozenset())
         for vote in votes:
             if vote.to_slot == new_vote.to_slot:
                 if vote == new_vote:
@@ -108,25 +103,130 @@ class Engine:
                 and vote.max_index >= new_vote.min_index
             ):
                 return None
-        return True
+        return vote.amount()
 
-    def build_fresh_block(self, slot: int, parent_slot: int, entity: str, censor: Callable[[Iterable[Vote]], Iterable[Vote]] | None = None) -> Block:
+    def slot_progress(self) -> "Engine":
+        slot_to_votes = self.slot_to_votes
+        slot = self.slot + 1
+        if slot.phase == 0:  # new slot
+            slot_to_votes = self.slot_to_all_votes
+        return self.change({"slot": slot, "slot_to_votes": slot_to_votes})
+
+    def add_votes(self, votes: Iterable[Vote]) -> "tuple[Engine, int]":
+        counted_votes = dict(self.counted_votes)
+        slot_to_votes = dict(self.slot_to_votes) 
+        slot_to_all_votes = dict(self.slot_to_all_votes)
+
+        for vote in votes:
+            assert (
+                0
+                <= vote.min_index
+                <= vote.max_index
+                < self.entity_to_alphas[vote.entity]
+            ), f"0 <= {vote.min_index=} <= {vote.max_index=} < {self.entity_to_alphas[vote.entity]=}"
+            assert vote.to_slot <= vote.from_slot <= self.slot.num
+            base = BaseVote(vote.entity, vote.from_slot)
+            additional_votes = Engine.check_vote(counted_votes.get(base, []))
+            assert additional_votes is not None, f"Double voting detected, {vote=}"
+            slot_to_all_votes[vote.to_slot] = (
+                slot_to_all_votes.get(vote.to_slot, 0) + additional_votes
+            )
+            if vote.from_slot != self.slot.num:
+
+                slot_to_votes[vote.to_slot] = (
+                    slot_to_votes.get(vote.to_slot, 0) + additional_votes
+                )
+            counted_votes[base] = counted_votes.get(base, frozenset()).union((vote,))
+
+        return self.change(
+            {
+                "counted_votes": frozendict(counted_votes),
+                "slot_to_votes": frozendict(slot_to_votes),
+                "slot_to_all_votes": frozendict(slot_to_all_votes),
+            }
+        )
+
+    def add_knowledge(self, entity_to_knowledge: dict[str, Iterable[int]]) -> "Engine":
+        """
+        Creates a new copy of engine with updated knowledge of blocks
+        """
+
+        knowledge = dict(self.knowledge_of_blocks)
+        for entity, entry in entity_to_knowledge.items():
+            knowledge[entity] = knowledge.get(entity, frozenset()).union(entry)
+
+        return self.change({"knowledge_of_blocks": frozendict(knowledge)})
+
+    def add_offer_bribery(
+        self, entity_to_offer_bribery_knowledge: dict[str, Iterable[OfferBribery]]
+    ) -> "Engine":
+        offer_briberies = dict(self.offer_briberies)
+        for entity, offers in entity_to_offer_bribery_knowledge.items():
+            offer_briberies[entity] = offer_briberies.get(entity, frozenset()).union(offers)
+        return self.change({"offer_briberies": offer_briberies})
+
+    # take_briberies
+    
+    def add_take_briberies(
+        self, entity_to_take_briberies_knowledge: dict[str, Iterable[OfferBribery]]
+    ) -> "Engine":
+        take_briberies = dict(self.take_briberies)
+        for entity, takes in entity_to_take_briberies_knowledge.items():
+            take_briberies[entity] = take_briberies.get(entity, frozenset()).union(takes)
+        return self.change({"take_briberies": take_briberies})
+
+
+    def build_block(
+        self,
+        slot: int,
+        parent_slot: int,
+        final: bool = False,
+        entity: str | None = None,
+        censor_take_briberies: (
+            Callable[[Iterable[TakeBribery]], Iterable[TakeBribery]] | None
+        ) = None,
+        censor_votes: Callable[[Iterable[Vote]], Iterable[Vote]] | None = None,
+    ) -> "Engine":
+        """
+        Builds an engine with a new block considering every known transaction -> censorship functions -> block
+        We only consider censoring out take briberies and votes. It doesn't makes sense to
+        censor offer bribe function calls as it is sufficient to censor take bribery calls
+
+        Arguments:
+            - slot (int): Slot we are building the block at, doesn't have to be self.slot.num
+            - parent_slot (int): parent block's slot
+            - final (bool): last block where funds are withdrawn/burned. Effectively symbolizes a block state after a long deadline
+            - entity (str | None): proposer entity of the given slot
+            - censor_take_briberies: Optional function censoring (not including) take_bribery calls in the block
+            - censor_votes: Optional function censoring (not including) some votes in the block
+        """
         prev_state = (
             dict(self.blocks[parent_slot].pay_to_attests)
             if parent_slot in self.blocks
             else {}
         )
-        wallet_state = self.blocks[parent_slot].wallet_state if parent_slot in self.blocks else WalletState()
+        wallet_state = (
+            self.blocks[parent_slot].wallet_state
+            if parent_slot in self.blocks
+            else WalletState()
+        )
+        if entity is None:
+            entity = self.slot_to_owner[slot]
         offer_briberies = self.offer_briberies.get(entity, frozenset())
         missing_offers = offer_briberies - frozenset(prev_state)
+
         for offer in missing_offers:
-            prev_state[offer] = SinglePayToAttestState(
-                original=offer,
+            prev_state[offer] = PayToAttestState(
+                offer_bribery=offer,
                 achieved=(False,) * len(offer.attests),
                 before_deadline=(False,) * len(offer.attests),
                 paid=False,
+                extra_funds=False,
             )
-        for take_briberies in self.take_briberies.get(entity, frozenset()):
+
+        for take_briberies in censor_take_briberies(
+            self.take_briberies.get(entity, [])
+        ):
             state = prev_state[take_briberies.reference]
             if (
                 take_briberies.reference in prev_state
@@ -138,32 +238,99 @@ class Engine:
                 state = state.achieve(
                     take_briberies.index, deadline is None or slot <= deadline
                 )
-                if all(state.achieved):
+                if all(state.achieved) and not state.paid:
                     amount = take_briberies.reference.base_reward
+                    extra_funds = False
                     if all(state.before_deadline):
+                        included = state.offer_bribery.included_slots
+                        excluded = state.offer_bribery.excluded_slots
+
+                        branch = {slot, self.base_head_slot}
+                        _slot = parent_slot
+
+                        while _slot != self.base_head_slot:
+                            branch.add(_slot)
+                            _slot = self.blocks[_slot].parent_slot
+
+                        extra_funds = included.issubset(
+                            branch
+                        ) and not excluded.intersection(branch)
+
+                    if extra_funds:
                         amount += take_briberies.reference.deadline_reward
-                    wallet_state.pay(
+                    wallet_state = wallet_state.pay(
                         from_address=take_briberies.reference.briber,
                         to_address=take_briberies.reference.entity,
                         amount=amount,
                     )
-                    state = state.pay()
+                    state = state.pay(extra_funds=extra_funds)
                 prev_state[take_briberies.reference] = state
 
-        
-        included = set()
+        included: set[Vote] = set()
         _slot = parent_slot
         while _slot != self.base_head_slot:
             included.update(self.blocks[_slot].votes)
             _slot = self.blocks[_slot].parent_slot
-        
-        votes = self.votes - included
-        if censor is not None:
-            votes = frozenset(censor(votes))
 
-        # TODO: consensus rewarding/punishing included timely votes
+        all_votes = frozenset(
+            {vote for entry in self.counted_votes.values() for vote in entry}
+        )
+        future_votes = {
+            vote for vote in all_votes if vote.from_slot >= slot
+        }  # only include slots from the past relative to 'slot'
 
-        return Block(
+        considerable = all_votes - future_votes
+        votes = considerable - included
+        if censor_votes is not None:
+            votes = frozenset(censor_votes(votes))
+
+        stat: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        for vote in considerable:
+            stat[vote.from_slot][vote.to_slot] += vote.amount()
+        correct_heads: dict[int, int] = {}
+        slots = {vote.from_slot for vote in votes}
+        head = slot
+        for curr_slot in sorted(slots, reverse=True):
+            while head > curr_slot:
+                head = self.blocks[head].parent_slot
+            correct_heads[curr_slot] = head
+
+        for vote in votes:
+
+            reward, punishment = attestation_base_reward(
+                timeliness=(3 if correct_heads[vote.from_slot] == vote.to_slot else 2),
+                common={
+                    "W_s": sum(stat[vote.from_slot].values()) / ATTESTATORS_PER_SLOT,
+                    "W_t": sum(stat[vote.from_slot].values()) / ATTESTATORS_PER_SLOT,
+                    "W_h": stat[vote.from_slot][vote.to_slot] / ATTESTATORS_PER_SLOT,
+                },
+                slot_distance=slot - vote.from_slot,
+            )
+            assert reward >= 0 and punishment <= 0  # TODO: DELETE
+            reward = BASE_INCREMENT * B * reward
+            punishment = BASE_INCREMENT * B * punishment
+
+            wallet_state = wallet_state.pay(
+                from_address="cons",
+                to_address=vote.entity,
+                amount=int(reward + punishment),
+            )
+            wallet_state = wallet_state.pay(  # paying to the proposer as well
+                from_address="cons",
+                to_address=entity,
+                amount=int(reward * W_p / (W_sum - W_p)),
+            )
+
+        if final:
+            for offer, state in prev_state.items():
+                if state.paid and not state.extra_funds:
+                    wallet_state = wallet_state.pay(
+                        from_address=offer.briber,
+                        to_address="burned_money",
+                        amount=offer.deadline_payback + offer.deadline_reward,
+                    )
+
+        block = Block(
             slot=slot,
             parent_slot=parent_slot,
             on_time=slot == self.slot.num,
@@ -172,113 +339,12 @@ class Engine:
             votes=votes,
         )
 
+        new_blocks = dict(self.blocks)
+        new_blocks[slot] = block
+        return self.change({"blocks": frozendict(new_blocks)})
+
     def honest_phase0(
         self,
     ) -> None:
         head = self.head()
         # new_blocks[self.slot.num] =
-
-    def progress(self, proposed: list[ProposeBlock], votes: list[Vote]) -> "Engine":
-        new_blocks = dict(self.blocks)
-
-        if self.slot.phase == 0:
-            if self.slot_to_owner[self.slot.num] == "H":
-                assert not proposed
-                assert not votes
-
-                new_blocks[self.slot.num] = Block(
-                    slot=self.slot.num,
-                    parent_slot=head,
-                    votes=0.0,
-                    on_time=True,
-                )
-            elif self.slot_to_owner[self.slot.num] == "A":
-                for prop in proposed:
-                    assert prop.block.slot not in new_blocks
-                    assert not prop.block.on_time or prop.block.slot == self.slot.num
-                    assert prop.block.votes == 0.0
-                    new_blocks[prop.block.slot] = prop.block
-
-                for vote in votes:
-                    assert (
-                        vote.from_slot != self.slot.num
-                    )  # only previous, not the time for voting
-                    assert new_remaining_votes[vote.from_slot] >= vote.amount
-                    assert vote.from_slot >= vote.to_slot
-                    new_remaining_votes[vote.from_slot] -= vote.amount
-        else:
-            for prop in proposed:
-                assert prop.block.slot not in new_blocks
-                assert not prop.block.on_time
-                assert prop.block.votes == 0.0
-                new_blocks[prop.block.slot] = prop.block
-            # adding not same slot votes
-            for vote in votes:
-
-                if vote.from_slot != self.slot.num:
-                    assert new_remaining_votes[vote.from_slot] >= vote.amount
-                    assert vote.from_slot >= vote.to_slot
-                    new_remaining_votes[vote.from_slot] -= vote.amount
-                    if vote.to_slot != self.base_head_slot:
-                        new_blocks[vote.to_slot] = Block(
-                            slot=new_blocks[vote.to_slot].slot,
-                            parent_slot=new_blocks[vote.to_slot].parent_slot,
-                            votes=new_blocks[vote.to_slot].votes + vote.amount,
-                            on_time=new_blocks[vote.to_slot].on_time,
-                        )
-            advance = Engine(
-                base_head_slot=self.base_head_slot,
-                slot=self.slot,
-                slot_to_alphas=self.slot_to_alphas,
-                slot_to_owner=self.slot_to_owner,
-                blocks=frozendict(new_blocks),
-                remaining_votes=frozendict(new_remaining_votes),
-            )
-            adv_head = advance.head()
-            head = self.head()
-            # assert (
-            #    adv_head == head
-            # )  # whether getting the new votes or not, it should not influence current voting
-
-            if head != self.base_head_slot:
-
-                if head == adv_head:
-                    new_blocks[head] = Block(
-                        slot=new_blocks[head].slot,
-                        parent_slot=new_blocks[head].parent_slot,
-                        votes=new_blocks[head].votes
-                        + 1
-                        - self.slot_to_alphas[self.slot.num],
-                        on_time=new_blocks[head].on_time,
-                    )
-                else:
-                    for h in [head, adv_head]:
-                        new_blocks[h] = Block(
-                            slot=new_blocks[h].slot,
-                            parent_slot=new_blocks[h].parent_slot,
-                            votes=new_blocks[h].votes
-                            + VoteInterval(0.0, 1 - self.slot_to_alphas[self.slot.num]),
-                            on_time=new_blocks[head].on_time,
-                        )
-            for vote in votes:
-                if vote.from_slot == self.slot.num:
-                    assert new_remaining_votes[vote.from_slot] >= vote.amount
-
-                    assert vote.from_slot >= vote.to_slot
-                    new_remaining_votes[vote.from_slot] -= vote.amount
-                    if vote.to_slot != self.base_head_slot:
-                        new_blocks[vote.to_slot] = Block(
-                            slot=new_blocks[vote.to_slot].slot,
-                            parent_slot=new_blocks[vote.to_slot].parent_slot,
-                            votes=new_blocks[vote.to_slot].votes + vote.amount,
-                            on_time=new_blocks[vote.to_slot].on_time,
-                        )
-
-        return Engine(
-            base_head_slot=self.base_head_slot,
-            slot=Slot(self.slot.num + self.slot.phase, phase=(self.slot.phase + 1) % 2),
-            slot_to_alphas=self.slot_to_alphas,
-            slot_to_owner=self.slot_to_owner,
-            blocks=frozendict(new_blocks),
-            remaining_votes=frozendict(new_remaining_votes),
-        )
