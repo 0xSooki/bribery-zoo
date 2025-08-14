@@ -4,20 +4,20 @@ from typing import Any, Callable, Iterable
 
 from frozendict import frozendict
 
-from theory.action import (
+from simulation.theory.action import (
     BaseVote,
     Block,
     OfferBribery,
-    BuildBlock,
     PayToAttestState,
     TakeBribery,
     Vote,
     WalletState,
 )
-from theory.utils import (
+from simulation.theory.utils import (
     ATTESTATORS_PER_SLOT,
     B,
     BASE_INCREMENT,
+    NUM_OF_VALIDATORS,
     PROPOSER_BOOST,
     Slot,
     W_p,
@@ -31,7 +31,7 @@ class Engine:
     base_head_slot: int
     slot: Slot
 
-    entity_to_alphas: frozendict[str, int]
+    entity_to_voting_power: frozendict[str, int]
     slot_to_owner: frozendict[int, str]
     slot_to_votes: frozendict[int, int]
     slot_to_all_votes: frozendict[int, int]
@@ -122,8 +122,8 @@ class Engine:
                 0
                 <= vote.min_index
                 <= vote.max_index
-                < self.entity_to_alphas[vote.entity]
-            ), f"0 <= {vote.min_index=} <= {vote.max_index=} < {self.entity_to_alphas[vote.entity]=}"
+                < self.entity_to_voting_power[vote.entity]
+            ), f"0 <= {vote.min_index=} <= {vote.max_index=} < {self.entity_to_voting_power[vote.entity]=}"
             assert vote.to_slot <= vote.from_slot <= self.slot.num
             base = BaseVote(vote.entity, vote.from_slot)
             additional_votes = Engine.check_vote(counted_votes.get(base, []))
@@ -350,3 +350,34 @@ class Engine:
         new_blocks = dict(self.blocks)
         new_blocks[slot] = block
         return self.change({"blocks": frozendict(new_blocks)})
+
+    @staticmethod
+    def make_engine(
+        chain_string: Iterable[str], entity_to_alpha: dict[str, float]
+    ) -> "Engine":
+        return Engine(
+            base_head_slot=0,
+            slot=Slot(1, 0),
+            entity_to_voting_power=frozendict(
+                {
+                    entity: int(alpha * NUM_OF_VALIDATORS)
+                    for entity, alpha in entity_to_alpha.items()
+                }
+            ),
+            slot_to_owner=frozendict(
+                {i + 1: owner for i, owner in enumerate(chain_string)}
+            ),
+            slot_to_votes=frozendict({i + 1: 0 for i in range(len(chain_string))}),
+            slot_to_all_votes=frozendict({i + 1: 0 for i in range(len(chain_string))}),
+            knowledge_of_blocks=frozendict(
+                {entity: frozenset() for entity in entity_to_alpha}
+            ),
+            blocks=frozendict(),
+            counted_votes=frozendict(),
+            offer_briberies=frozendict(
+                {entity: frozenset() for entity in entity_to_alpha}
+            ),
+            take_briberies=frozendict(
+                {entity: frozenset() for entity in entity_to_alpha}
+            ),
+        )
