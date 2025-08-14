@@ -56,10 +56,11 @@ class OfferBribery(AdvAction):  # phase 1
     Already signed transaction
     Attributes:
         - attests: All the attestation requests to be verified later (if one is missing, no payment)
-        - base_reward: Amount payed to entity in case of takeBribery, regardless of deadline(s)
-        - deadline_reward: Amount payed if all verifications were done before the deadline(s)
-        - entity: Bribed entity
+        - base_reward: Amount payed to entity in case of takeBribery, regardless of deadline(s) or success of fork. The main reason is that we reward them if they do not double fork
+        - deadline_reward: Amount payed if all verifications were done before the deadline(s) and fork succeded
+        - bribee: Bribed entity
         - briber: Entity paying/offering the bribe
+        - bribed_proposer: Entity payed if deadline+fork is successful. Usually the same entity to include the takeBribery (can be the bribee).
         - included_slots: The smart contract will verify whether this tx happened on a branch containing these slot numbers. If not, only base_reward can be issued
         - excluded_slots: The smart contract will verify whether this tx happened on a branch NOT containing any of these slot numbers. If it does, only base_reward can be issued
     """
@@ -70,10 +71,12 @@ class OfferBribery(AdvAction):  # phase 1
     base_reward: int
     deadline_reward: int
     deadline_payback: int
-    entity: str
+    bribee: str
     briber: str
+    bribed_proposer: str
     included_slots: frozenset[int]
     excluded_slots: frozenset[int]
+    # TODO: bribee != entity (all the time)
 
 
 @dataclass

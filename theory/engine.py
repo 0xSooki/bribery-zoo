@@ -114,7 +114,7 @@ class Engine:
 
     def add_votes(self, votes: Iterable[Vote]) -> "tuple[Engine, int]":
         counted_votes = dict(self.counted_votes)
-        slot_to_votes = dict(self.slot_to_votes) 
+        slot_to_votes = dict(self.slot_to_votes)
         slot_to_all_votes = dict(self.slot_to_all_votes)
 
         for vote in votes:
@@ -162,19 +162,22 @@ class Engine:
     ) -> "Engine":
         offer_briberies = dict(self.offer_briberies)
         for entity, offers in entity_to_offer_bribery_knowledge.items():
-            offer_briberies[entity] = offer_briberies.get(entity, frozenset()).union(offers)
+            offer_briberies[entity] = offer_briberies.get(entity, frozenset()).union(
+                offers
+            )
         return self.change({"offer_briberies": offer_briberies})
 
     # take_briberies
-    
+
     def add_take_briberies(
         self, entity_to_take_briberies_knowledge: dict[str, Iterable[OfferBribery]]
     ) -> "Engine":
         take_briberies = dict(self.take_briberies)
         for entity, takes in entity_to_take_briberies_knowledge.items():
-            take_briberies[entity] = take_briberies.get(entity, frozenset()).union(takes)
+            take_briberies[entity] = take_briberies.get(entity, frozenset()).union(
+                takes
+            )
         return self.change({"take_briberies": take_briberies})
-
 
     def build_block(
         self,
@@ -258,9 +261,14 @@ class Engine:
 
                     if extra_funds:
                         amount += take_briberies.reference.deadline_reward
+                        wallet_state = wallet_state.pay(
+                            from_address=take_briberies.reference.briber,
+                            to_address=take_briberies.reference.bribed_proposer,
+                            amount=take_briberies.reference.deadline_payback,
+                        )
                     wallet_state = wallet_state.pay(
                         from_address=take_briberies.reference.briber,
-                        to_address=take_briberies.reference.entity,
+                        to_address=take_briberies.reference.bribee,
                         amount=amount,
                     )
                     state = state.pay(extra_funds=extra_funds)
@@ -342,9 +350,3 @@ class Engine:
         new_blocks = dict(self.blocks)
         new_blocks[slot] = block
         return self.change({"blocks": frozendict(new_blocks)})
-
-    def honest_phase0(
-        self,
-    ) -> None:
-        head = self.head()
-        # new_blocks[self.slot.num] =
