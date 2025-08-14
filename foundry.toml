@@ -11,5 +11,7 @@ remappings = [
 via_ir = true
 optimizer = true
 optimizer_runs = 200
-
+gas_limit = "18446744073709551615"
+gas_reports = ["*"]
+memory_limit = 134217728
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.13;
 
 library Utils {
     // Mainnet constants
@@ -24,8 +25,26 @@ library Utils {
     ) public pure returns (bytes32) {
         bytes32 voluntaryExitRoot = compute_voluntary_exit_root(epoch, validatorIndex);
 
-        bytes32 domain = compute_domain(DOMAIN_VOLUNTARY_EXIT, MAINNET_FORK_VERSION, genesisValidatorsRoot);
+        bytes32 domain = compute_domain(DOMAIN_VOLUNTARY_EXIT, forkVersion, genesisValidatorsRoot);
         bytes32 signingRoot = sha256(abi.encodePacked(voluntaryExitRoot, domain));
+
+        return signingRoot;
+    }
+
+    /**
+     * @notice Compute the signing root for a validator's voluntary exit
+     * @param m Hash tree root of the attestation data
+     * @param forkVersion The current fork version
+     * @param genesisValidatorsRoot The genesis validators root
+     * @return signingRoot The signing root to be signed by the validator
+     */
+    function compute_signing_root(bytes32 m, bytes4 forkVersion, bytes32 genesisValidatorsRoot)
+        public
+        pure
+        returns (bytes32)
+    {
+        bytes32 domain = compute_domain(DOMAIN_ATTESTER, forkVersion, genesisValidatorsRoot);
+        bytes32 signingRoot = sha256(abi.encodePacked(m, domain));
 
         return signingRoot;
     }
@@ -40,7 +59,7 @@ library Utils {
         bytes32 epochChunk = pad_to_32_bytes(epoch);
         bytes32 validatorIndexChunk = pad_to_32_bytes(validatorIndex);
 
-        return merkle_root2(epochChunk, validatorIndexChunk);
+        return merkelize_chunks2(epochChunk, validatorIndexChunk);
     }
 
     /**
@@ -68,7 +87,7 @@ library Utils {
         pure
         returns (bytes32 domain)
     {
-        bytes32 forkDataRoot = merkle_root2(forkVersion, genesisValidatorsRoot);
+        bytes32 forkDataRoot = merkelize_chunks2(forkVersion, genesisValidatorsRoot);
 
         bytes memory domainBytes = new bytes(32);
 
@@ -114,7 +133,7 @@ library Utils {
      * @param chunk2 Second 32-byte chunk
      * @return Merkle root of the two chunks
      */
-    function merkle_root2(bytes32 chunk1, bytes32 chunk2) internal pure returns (bytes32) {
+    function merkelize_chunks2(bytes32 chunk1, bytes32 chunk2) internal pure returns (bytes32) {
         return sha256(abi.encodePacked(chunk1, chunk2));
     }
 }
