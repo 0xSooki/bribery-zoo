@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {LibRLP} from "solady/src/utils/LibRLP.sol";
-import {Blockhash} from "openzeppelin/utils/BlockHash.sol";
+import {Blockhash} from "@openzeppelin/contracts/utils/Blockhash.sol";
 
 contract HeaderVerify {
     using LibRLP for *;
@@ -57,8 +57,8 @@ contract HeaderVerify {
      * @return RLP-encoded header bytes
      */
     function encodeHeader(BlockHeader memory header) internal pure returns (bytes memory) {
-        bytes memory encoded = LibRLP.p().p(abi.encodePacked(header.parentHash)).p(abi.encodePacked(header.sha3Uncles))
-            .p(header.miner).p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
+        return LibRLP.p().p(abi.encodePacked(header.parentHash)).p(abi.encodePacked(header.sha3Uncles)).p(header.miner)
+            .p(abi.encodePacked(header.stateRoot)).p(abi.encodePacked(header.transactionsRoot)).p(
             abi.encodePacked(header.receiptsRoot)
         ).p(header.logsBloom).p(header.difficulty).p(header.number).p(header.gasLimit).p(header.gasUsed).p(
             header.timestamp
@@ -67,8 +67,6 @@ contract HeaderVerify {
         ).p(abi.encodePacked(header.withdrawalsRoot)).p(header.blobGasUsed).p(header.excessBlobGas).p(
             abi.encodePacked(header.parentBeaconBlockRoot)
         ).p(abi.encodePacked(header.requestsHash)).encode();
-
-        return encoded;
     }
 
     /**

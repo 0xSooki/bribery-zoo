@@ -7,7 +7,7 @@ contract PayToBias {
     struct ValidatorAuction {
         address validator;
         uint256 blockNumber;
-        bool withold;
+        bool withhold;
         bool claimed;
         uint256 auctionDeadline;
         bytes32 blockHash;
@@ -21,15 +21,15 @@ contract PayToBias {
 
     HeaderVerify public immutable headerVerify;
     address public owner;
-    uint256 public constant BLOCK_TIME = 12; // 12 seconds per block
+    uint256 public constant BLOCK_TIME = 12;
 
     mapping(uint256 => ValidatorAuction) public validatorAuctions;
     mapping(uint256 => mapping(bool => Bid)) public highestBids;
     mapping(address => uint256) public balances;
 
-    constructor(address _headerVerify) {
+    constructor(address headerVerifyAddress) {
         owner = msg.sender;
-        headerVerify = HeaderVerify(_headerVerify);
+        headerVerify = HeaderVerify(headerVerifyAddress);
     }
 
     modifier onlyOwner() {
@@ -49,7 +49,7 @@ contract PayToBias {
         validatorAuctions[blockNumber] = ValidatorAuction({
             validator: msg.sender,
             blockNumber: blockNumber,
-            withold: false,
+            withhold: false,
             claimed: false,
             auctionDeadline: auctionDeadline,
             blockHash: bytes32(0)
@@ -80,10 +80,7 @@ contract PayToBias {
     }
 
     /**
-     * @notice Submit a proof wheter the validator withold or withheld their block
-     * @param blockNumber The block number the validator should have withold
-     * @param parentHeader The header of block N-1 (before validator's slot)
-     * @param nextHeader The header of block N (the one being auctioned)
+     * @notice Submit proof whether validator withheld or published their block
      */
     function takeBribe(
         uint256 blockNumber,
@@ -92,7 +89,7 @@ contract PayToBias {
     ) external virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
         require(auction.validator != address(0), "Auction does not exist");
-        // require(!auction.withold, "Block was withold");
+        // require(!auction.withhold, "Block was withhold");
         // require(!auction.claimed, "Already claimed");
 
         require(parentHeader.number == blockNumber - 1, "Invalid parent block number");
@@ -115,9 +112,9 @@ contract PayToBias {
         uint256 timeGap = nextHeader.timestamp - parentHeader.timestamp;
 
         if (timeGap > BLOCK_TIME + 4) {
-            auction.withold = true;
+            auction.withhold = true;
         } else {
-            auction.withold = false;
+            auction.withhold = false;
         }
 
         _resolveAuction(blockNumber);
@@ -126,15 +123,15 @@ contract PayToBias {
     function _resolveAuction(uint256 blockNumber) internal virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
         require(
-            auction.withold || (auction.auctionDeadline < block.timestamp),
+            auction.withhold || (auction.auctionDeadline < block.timestamp),
             "Block was either not witheld or not yet over deadline"
         );
 
         Bid storage withholdBid = highestBids[blockNumber][true];
         Bid storage publishBid = highestBids[blockNumber][false];
 
-        Bid storage winningBid = auction.withold ? withholdBid : publishBid;
-        Bid storage losingBid = auction.withold ? publishBid : withholdBid;
+        Bid storage winningBid = auction.withhold ? withholdBid : publishBid;
+        Bid storage losingBid = auction.withhold ? publishBid : withholdBid;
 
         if (winningBid.bidder != address(0)) {
             payable(auction.validator).transfer(winningBid.amount);
@@ -146,10 +143,16 @@ contract PayToBias {
         }
     }
 
+    /**
+     * @notice Deposit funds to contract
+     */
     function depositFunds() external payable {
         balances[msg.sender] += msg.value;
     }
 
+    /**
+     * @notice Withdraw funds from contract
+     */
     function withdrawFunds() external {
         uint256 amount = balances[msg.sender];
         require(amount > 0, "No funds to withdraw");
@@ -158,10 +161,16 @@ contract PayToBias {
         payable(msg.sender).transfer(amount);
     }
 
+    /**
+     * @notice Get auction details for a block number
+     */
     function getAuction(uint256 blockNumber) external view returns (ValidatorAuction memory) {
         return validatorAuctions[blockNumber];
     }
 
+    /**
+     * @notice Get highest bids for both choices
+     */
     function getHighestBids(uint256 blockNumber)
         external
         view
@@ -170,15 +179,16 @@ contract PayToBias {
         return (highestBids[blockNumber][true], highestBids[blockNumber][false]);
     }
 
+    /**
+     * @notice Check if auction can be claimed
+     */
     function canClaim(uint256 blockNumber) external view returns (bool) {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        return !auction.claimed && (auction.withold || block.timestamp > auction.auctionDeadline);
+        return !auction.claimed && (auction.withhold || block.timestamp > auction.auctionDeadline);
     }
 
     /**
      * @notice Check if auction is still active for bidding
-     * @param blockNumber The block number to check
-     * @return true if auction is active, false if expired
      */
     function isAuctionActive(uint256 blockNumber) external view returns (bool) {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
