@@ -79,7 +79,7 @@ class OfferBribery(AdvAction):  # phase 1
     # TODO: bribee != entity (all the time)
 
 
-@dataclass
+@dataclass(frozen=True)
 class TakeBribery(BribeeAction):
     reference: OfferBribery
     vote: Vote  # one can construct a vote from the message

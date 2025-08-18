@@ -162,6 +162,11 @@ class Engine:
     ) -> "Engine":
         offer_briberies = dict(self.offer_briberies)
         for entity, offers in entity_to_offer_bribery_knowledge.items():
+            for offer in offers:
+                for single in offer.attests:
+                    assert (
+                        single.slot in self.blocks or single.slot == self.base_head_slot
+                    )  # H(m) exists already
             offer_briberies[entity] = offer_briberies.get(entity, frozenset()).union(
                 offers
             )
@@ -170,10 +175,25 @@ class Engine:
     # take_briberies
 
     def add_take_briberies(
-        self, entity_to_take_briberies_knowledge: dict[str, Iterable[OfferBribery]]
+        self, entity_to_take_briberies_knowledge: dict[str, Iterable[TakeBribery]]
     ) -> "Engine":
         take_briberies = dict(self.take_briberies)
         for entity, takes in entity_to_take_briberies_knowledge.items():
+            for take_bribery in takes:
+                single_offer = take_bribery.reference.attests[take_bribery.index]
+                assert take_bribery.reference.bribee == take_bribery.vote.entity
+                assert single_offer.from_slot == take_bribery.vote.from_slot
+                assert single_offer.slot == take_bribery.vote.to_slot
+                assert single_offer.min_index == take_bribery.vote.min_index
+                assert single_offer.max_index == take_bribery.vote.max_index
+
+                base = BaseVote(take_bribery.vote.entity, take_bribery.vote.from_slot)
+                assert (
+                    Engine.check_vote(
+                        self.counted_votes.get(base, []), take_bribery.vote
+                    )
+                    is not None
+                )
             take_briberies[entity] = take_briberies.get(entity, frozenset()).union(
                 takes
             )
@@ -233,19 +253,16 @@ class Engine:
                 extra_funds=False,
             )
 
-        for take_briberies in censor_take_briberies(
-            self.take_briberies.get(entity, [])
-        ):
-            state = prev_state[take_briberies.reference]
+        for take_bribery in censor_take_briberies(self.take_briberies.get(entity, [])):
+
+            state = prev_state[take_bribery.reference]
             if (
-                take_briberies.reference in prev_state
-                and not state.achieved[take_briberies.index]
+                take_bribery.reference in prev_state
+                and not state.achieved[take_bribery.index]
             ):
-                deadline = take_briberies.reference.attests[
-                    take_briberies.index
-                ].deadline
+                deadline = take_bribery.reference.attests[take_bribery.index].deadline
                 state = state.achieve(
-                    take_briberies.index, deadline is None or slot <= deadline
+                    take_bribery.index, deadline is None or slot <= deadline
                 )
                 if all(state.achieved) and not state.paid:
 
@@ -267,25 +284,25 @@ class Engine:
 
                     if extra_funds:
                         wallet_state = wallet_state.pay(
-                            from_address=take_briberies.reference.briber,
-                            to_address=take_briberies.reference.bribed_proposer,
-                            amount=take_briberies.reference.deadline_payback,
+                            from_address=take_bribery.reference.briber,
+                            to_address=take_bribery.reference.bribed_proposer,
+                            amount=take_bribery.reference.deadline_payback,
                             comment="Proposer reward for not censoring",
                         )
                         wallet_state = wallet_state.pay(
-                            from_address=take_briberies.reference.briber,
-                            to_address=take_briberies.reference.bribee,
-                            amount=take_briberies.reference.deadline_reward,
+                            from_address=take_bribery.reference.briber,
+                            to_address=take_bribery.reference.bribee,
+                            amount=take_bribery.reference.deadline_reward,
                             comment="Reward to bribee for voting timely",
                         )
                     wallet_state = wallet_state.pay(
-                        from_address=take_briberies.reference.briber,
-                        to_address=take_briberies.reference.bribee,
-                        amount=take_briberies.reference.base_reward,
+                        from_address=take_bribery.reference.briber,
+                        to_address=take_bribery.reference.bribee,
+                        amount=take_bribery.reference.base_reward,
                         comment="Paying for base reward to bribee",
                     )
                     state = state.pay(extra_funds=extra_funds)
-                prev_state[take_briberies.reference] = state
+                prev_state[take_bribery.reference] = state
 
         included: set[Vote] = set()
         _slot = parent_slot
