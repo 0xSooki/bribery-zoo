@@ -134,19 +134,29 @@ class BuildBlock(AdvAction, BribeeAction):  # phase 0
 class WalletState:
     # has_infinite_money: frozenset[str] = field(default_factory=lambda: HAS_INFINITE_MONEY)
     address_to_money: frozendict[str, int] = field(default_factory=frozendict)
+    ledger: tuple[str, ...] = field(default_factory=tuple)
 
-    def pay(self, from_address: str, to_address: str, amount: int) -> "WalletState":
+    def pay(
+        self, from_address: str, to_address: str, amount: int, comment: str = ""
+    ) -> "WalletState":
         # assert amount > 0
         # if from_address not in self.has_infinite_money:
         #    assert self.address_to_money[from_address] >= amount
-        if from_address not in self.address_to_money:
-            self.address_to_money[from_address] = 0
         new_address_to_money = dict(self.address_to_money)
+
+        if from_address not in self.address_to_money:
+            new_address_to_money[from_address] = 0
+
         if to_address not in new_address_to_money:
             new_address_to_money[to_address] = 0
         new_address_to_money[to_address] += amount
         new_address_to_money[from_address] -= amount
-        return WalletState(frozendict(new_address_to_money))
+        new_ledger = list(self.ledger)
+        new_ledger.append(
+            f"{from_address} -> {to_address} - {amount} GWei"
+            + (f" - {comment}" if comment else "")
+        )
+        return WalletState(frozendict(new_address_to_money), ledger=tuple(new_ledger))
 
 
 @dataclass(frozen=True)
