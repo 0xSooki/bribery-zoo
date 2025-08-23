@@ -51,12 +51,12 @@ class Engine:
         return Engine(**data)
 
     def head(self, entity: str) -> int:
-        slot_to_acc_votes: dict[int, int] = {}
+        slot_to_acc_votes: dict[int, int] = defaultdict(int)
         knowledge = self.knowledge_of_blocks.get(entity, frozenset())
         for slot, votes in sorted(self.slot_to_votes.items(), key=lambda x: x[0]):
             if slot not in knowledge:
                 continue
-            slot_to_acc_votes[slot] = votes
+            slot_to_acc_votes[slot] += votes
             if slot == self.slot.num and self.blocks[slot].on_time:
                 slot_to_acc_votes[slot] += PROPOSER_BOOST
 

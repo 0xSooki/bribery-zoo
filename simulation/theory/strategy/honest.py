@@ -8,6 +8,7 @@ from simulation.theory.strategy.base import IHonestStrategy
 @dataclass
 class HonestStrategy(IHonestStrategy):
     all_entities: Collection[str]
+    base_slot: int
     chain_string: str
     entity: str = "H"
 
@@ -18,7 +19,7 @@ class HonestStrategy(IHonestStrategy):
             parent_slot=head,
             knowledge=self.all_entities,
             entity=self.entity,
-            final=engine.slot.num > len(self.chain_string),
+            final=engine.slot.num - self.base_slot > len(self.chain_string),
         )
 
     def vote(self, engine: Engine) -> Engine:
@@ -29,7 +30,7 @@ class HonestStrategy(IHonestStrategy):
                     entity=self.entity,
                     from_slot=engine.slot.num,
                     min_index=0,
-                    max_index=engine.entity_to_voting_power[self.entity],
+                    max_index=engine.entity_to_voting_power[self.entity] - 1,
                     to_slot=head,
                 ),
             )

@@ -1,9 +1,20 @@
+from dataclasses import dataclass
 import math
 from numbers import Real
 from simulation.theory.action import OfferBribery, SingleOfferBribery, TakeBribery, Vote
 from simulation.theory.engine import Engine
-from simulation.theory.strategy.base import IAdvStrategy, chain_string_extract, plan
+from simulation.theory.strategy.base import IAdvStrategy
 from simulation.theory.utils import PROPOSER_BOOST
+
+
+@dataclass(frozen=True)
+class AdvParams:
+    entity_to_censor_from_slot: dict[str, int | None]
+    base_reward_unit: Real
+    deadline_reward_unit: Real
+    deadline_payback_unit: Real
+    patient: bool
+    break_bad_slot: int | None
 
 
 class AdvStrategy(IAdvStrategy):
@@ -14,6 +25,7 @@ class AdvStrategy(IAdvStrategy):
         deadline_reward_unit: Real,
         deadline_payback_unit: Real,
         patient: bool,
+        break_bad_slot: int | None,
         base_slot: int,
         chain_string: str,
         entity: str,
@@ -25,6 +37,7 @@ class AdvStrategy(IAdvStrategy):
         self.deadline_payback_unit = deadline_payback_unit
         self.deadline_reward_unit = deadline_reward_unit
         self.patient = patient
+        self.break_bad_slot = break_bad_slot
         self.base_slot = base_slot
         self.chain_string = chain_string
         self.entity = entity
@@ -39,13 +52,7 @@ class AdvStrategy(IAdvStrategy):
         self.aborted: bool = False
         self.withheld_slots: list[int] = []
 
-        self.plan_correct_votes, self.included, self.excluded = plan(
-            base_slot, chain_string, honest_entity
-        )
-
-        self.last_E, self.last_H = chain_string_extract(
-            base_slot, chain_string, honest_entity
-        )
+        self.setup_plan()
 
         self.offers: list[OfferBribery] = []
 
@@ -88,16 +95,16 @@ class AdvStrategy(IAdvStrategy):
         ):
             return engine
 
-        voting_slots = [engine.slot.num]
+        voting_slots = {engine.slot.num}
         deadline = engine.slot.num + 1
         for slot, owner in enumerate(
             self.chain_string[engine.slot.num - self.base_slot :],
-            start=engine.slot.num,
+            start=engine.slot.num + 1,
         ):
             if owner != self.honest_entity:
                 deadline = slot
                 break
-            voting_slots.append(slot)
+            voting_slots.add(slot)
 
         offer_briberies: list[OfferBribery] = []
         for bribee in self.coorporating_bribees:
@@ -167,9 +174,7 @@ class AdvStrategy(IAdvStrategy):
     def withheld_blocks(self, engine: Engine) -> Engine:
         if self.aborted:
             return engine
-        if (
-            engine.slot.num == self.last_H
-        ):
+        if engine.slot.num == self.last_H:
             engine = engine.add_knowledge(
                 entity_to_knowledge={
                     entity: self.withheld_slots for entity in self.all_entities
@@ -178,19 +183,6 @@ class AdvStrategy(IAdvStrategy):
             self.withheld_slots = []
 
         return engine
-
-    def structural_anomaly(self, engine: Engine) -> bool:
-        if engine.slot.num < self.last_H and any(
-            engine.slot_to_owner[slot] != self.honest_entity
-            and slot in engine.knowledge_of_blocks[self.honest_entity]
-            for slot in range(self.base_slot + 1, self.last_H)
-        ):
-            return True
-
-        return any(
-            self.plan_correct_votes[slot - 1] != engine.blocks[slot].parent_slot
-            for slot in range(self.base_slot + 1, engine.slot.num + 1)
-        )
 
     def abort(self, engine: Engine) -> Engine:
         self.aborted = True
@@ -219,7 +211,9 @@ class AdvStrategy(IAdvStrategy):
         ):
             self.withheld_slots.append(engine.slot.num)
         if self.structural_anomaly(engine):
-            engine = self.abort()
+            engine = self.abort(engine)
+        elif self.break_bad_slot is not None and engine.slot.num >= self.break_bad_slot:
+            engine = self.abort(engine)
         elif engine.slot.phase == 1:
             black_listed: set[str] = (
                 set()
@@ -277,9 +271,11 @@ class AdvStrategy(IAdvStrategy):
                     ) * E_voting_power + PROPOSER_BOOST
                 else:
                     honest_votes = (
-                        len(self.chain_string) - self.last_E + self.base_slot
+                        len(self.chain_string) - self.last_E + self.base_slot - 1
                     ) * H_voting_power
-                    adv_votes = len(chain_string) * E_voting_power + PROPOSER_BOOST
+                    adv_votes = (
+                        len(chain_string) - 1
+                    ) * E_voting_power + PROPOSER_BOOST
                 for vote in all_votes:
                     if (
                         vote.entity in untrusted_bribees
