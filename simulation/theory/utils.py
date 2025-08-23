@@ -99,3 +99,13 @@ class Slot:
     def __add__(self, other: int) -> "Slot":
         numerical = 2 * self.num + self.phase + other
         return Slot(numerical // 2, numerical % 2)
+
+    def __le__(self, other: "Slot") -> bool:
+        if self.num == other.num:
+            return self.phase <= other.phase
+        return self.num < other.num
+
+    def __lt__(self, other: "Slot") -> bool:
+        if self.num == other.num:
+            return self.phase < other.phase
+        return self.num < other.num

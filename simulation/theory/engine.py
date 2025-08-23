@@ -399,6 +399,9 @@ class Engine:
             }
         )
 
+    def all_votes(self) -> set[Vote]:
+        return {vote for votes in self.counted_votes.values() for vote in votes}
+
     @staticmethod
     def make_engine(
         chain_string: Iterable[str], entity_to_voting_power: dict[str, int]

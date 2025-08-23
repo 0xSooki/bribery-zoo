@@ -36,7 +36,8 @@ class Vote(BaseVote, AdvAction, BribeeAction):  # phase 1
 class SingleOfferBribery:
     """
     Attributes:
-        - votes_needed: usually all the voting power of the bribed entity
+        - min_index: min index of the bribee we expect voting
+        - max_index: max index of the bribee we expect voting
         - from_slot: the votes are coming from
         - slot: slot to vote for
         - deadline:
