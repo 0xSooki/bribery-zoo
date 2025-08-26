@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import math
 from numbers import Real
+
+from frozendict import frozendict
 from simulation.theory.action import OfferBribery, SingleOfferBribery, TakeBribery, Vote
 from simulation.theory.engine import Engine
 from simulation.theory.strategy.base import IAdvStrategy
@@ -9,10 +11,7 @@ from simulation.theory.utils import PROPOSER_BOOST
 
 @dataclass(frozen=True)
 class AdvParams:
-    entity_to_censor_from_slot: dict[str, int | None]
-    base_reward_unit: Real
-    deadline_reward_unit: Real
-    deadline_payback_unit: Real
+    censor_from_slot: int | None
     patient: bool
     break_bad_slot: int | None
 
@@ -20,7 +19,7 @@ class AdvParams:
 class AdvStrategy(IAdvStrategy):
     def __init__(
         self,
-        entity_to_censor_from_slot: dict[str, int | None],
+        censor_from_slot: int | None,
         base_reward_unit: Real,
         deadline_reward_unit: Real,
         deadline_payback_unit: Real,
@@ -32,7 +31,7 @@ class AdvStrategy(IAdvStrategy):
         honest_entity: str,
         bribee_entities: set[str],
     ):
-        self.entity_to_censor_from_slot = entity_to_censor_from_slot
+        self.censor_from_slot = censor_from_slot
         self.base_reward_unit = base_reward_unit
         self.deadline_payback_unit = deadline_payback_unit
         self.deadline_reward_unit = deadline_reward_unit
@@ -56,6 +55,9 @@ class AdvStrategy(IAdvStrategy):
 
         self.offers: list[OfferBribery] = []
 
+        if break_bad_slot == self.base_slot:
+            self.aborted = True
+
     def build(self, engine: Engine) -> Engine:
         if self.aborted:
             head = engine.head(self.honest_entity)
@@ -75,7 +77,7 @@ class AdvStrategy(IAdvStrategy):
                 knowledge = self.all_entities
 
         def to_filter(take_bribery: TakeBribery) -> bool:
-            from_slot = self.entity_to_censor_from_slot[take_bribery.reference.bribee]
+            from_slot = self.censor_from_slot
             return from_slot is None or engine.slot.num < from_slot
 
         return engine.build_block(
@@ -90,7 +92,10 @@ class AdvStrategy(IAdvStrategy):
     def offer_bribe(self, engine: Engine) -> Engine:
         if (
             self.aborted
-            or engine.slot_to_owner[engine.slot.num] == self.honest_entity
+            or (
+                engine.slot_to_owner[engine.slot.num] == self.honest_entity
+                and engine.slot.num != self.base_slot + 1
+            )
             or engine.slot.num == self.base_slot + len(self.chain_string)
         ):
             return engine
@@ -113,7 +118,7 @@ class AdvStrategy(IAdvStrategy):
                     min_index=0,
                     max_index=engine.entity_to_voting_power[bribee] - 1,
                     from_slot=slot,
-                    slot=engine.slot.num,
+                    slot=self.plan_correct_votes[slot],
                     deadline=deadline,
                 )
                 for slot in voting_slots
@@ -207,7 +212,7 @@ class AdvStrategy(IAdvStrategy):
             and engine.slot_to_owner[engine.slot.num] in self.bribee_entities
             and engine.slot.num
             not in engine.knowledge_of_blocks.get(self.honest_entity, [])
-            and engine.sot.num in engine.knowledge_of_blocks.get(self.entity, [])
+            and engine.slot.num in engine.knowledge_of_blocks.get(self.entity, [])
         ):
             self.withheld_slots.append(engine.slot.num)
         if self.structural_anomaly(engine):

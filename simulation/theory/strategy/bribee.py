@@ -144,6 +144,8 @@ class BribeeStrategy(IBribeeStrategy):
             engine.offer_briberies.get(self.entity, frozenset()) - self.accepted_offers
         )
         for offer in new_offers:
+            if offer.bribee != self.entity:
+                continue
             if self.break_bad_slot is None or all(
                 attest_req.deadline is None
                 or attest_req.deadline >= self.break_bad_slot
