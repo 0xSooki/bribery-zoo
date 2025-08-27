@@ -71,7 +71,11 @@ def test_game_success_test(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=False,
     )
-    outcome = table[(best_adv, (best_bribee,) * len(bribee_entities))]
+    outcome = table[
+        frozendict(
+            {"A": best_adv, **{entity: best_bribee for entity in bribee_entities}}
+        )
+    ]
     assert outcome.success
 
 
@@ -127,7 +131,7 @@ def test_game_AHA(
             only_sending_to_deadline_proposing_entity=level == 2,
             finish_offers_regardless_of_abort=False,
         )
-        outcome = table[(adv_strategy, (bribee_strategy,))]
+        outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
         assert outcome.success
         base_rewards = [
             payment
@@ -169,7 +173,7 @@ def test_game_AHA(
             only_sending_to_deadline_proposing_entity=level == 2,
             finish_offers_regardless_of_abort=False,
         )
-        outcome = table[(adv_strategy, (bribee_strategy,))]
+        outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
         assert outcome.success == (level == 0)
         base_rewards = [
             payment
@@ -210,7 +214,7 @@ def test_game_AHA(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=False,
     )
-    outcome = table[(adv_strategy, (bribee_strategy,))]
+    outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
         for payment in outcome.wallet_state.ledger
@@ -250,7 +254,7 @@ def test_game_AHA(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=True,
     )
-    outcome = table[(adv_strategy, (bribee_strategy,))]
+    outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
         for payment in outcome.wallet_state.ledger
@@ -290,7 +294,7 @@ def test_game_AHA(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=True,
     )
-    outcome = table[(adv_strategy, (bribee_strategy,))]
+    outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     assert not outcome.success
     base_rewards = [
         payment
@@ -331,7 +335,7 @@ def test_game_AHA(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=False,
     )
-    outcome = table[(adv_strategy, (bribee_strategy,))]
+    outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     assert not outcome.success
     base_rewards = [
         payment
@@ -402,7 +406,7 @@ def test_game_HAA(
             only_sending_to_deadline_proposing_entity=level == 2,
             finish_offers_regardless_of_abort=False,
         )
-        outcome = table[(adv_strategy, (bribee_strategy,))]
+        outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
         assert outcome.success
         base_rewards = [
             payment
@@ -444,7 +448,7 @@ def test_game_HAA(
             only_sending_to_deadline_proposing_entity=level == 2,
             finish_offers_regardless_of_abort=False,
         )
-        outcome = table[(adv_strategy, (bribee_strategy,))]
+        outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
         assert outcome.success
         base_rewards = [
             payment
@@ -485,7 +489,7 @@ def test_game_HAA(
         only_sending_to_deadline_proposing_entity=False,
         finish_offers_regardless_of_abort=False,
     )
-    outcome = table[(adv_strategy, (bribee_strategy,))]
+    outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
         for payment in outcome.wallet_state.ledger

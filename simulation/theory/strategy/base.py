@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from simulation.theory.engine import Engine
+from simulation.theory.utils import Slot
 
 
 class Params:
@@ -32,6 +33,10 @@ class IByzantineStrategy(IStrategy):
     included: frozenset[int]
     excluded: frozenset[int]
 
+    entity: str
+
+    event_list: list[tuple[Slot, str]]
+
     @abstractmethod
     def send_others_votes(self, engine: Engine) -> Engine: ...
 
@@ -47,6 +52,12 @@ class IByzantineStrategy(IStrategy):
             and slot in engine.knowledge_of_blocks[self.honest_entity]
             for slot in range(self.base_slot + 1, self.last_H)
         ):
+            self.event_list.append(
+                (
+                    engine.slot,
+                    f"[{self.entity}] Someone released the secret branch to everyone before planned time",
+                )
+            )
             return True
 
         for slot in range(self.base_slot + 1, engine.slot.num + 1):
@@ -60,6 +71,12 @@ class IByzantineStrategy(IStrategy):
                 )
 
             if correct != engine.blocks[slot].parent_slot:
+                self.event_list.append(
+                    (
+                        engine.slot,
+                        f"[{self.entity}] I detected structural anomaly: parent of {slot} is {engine.blocks[slot].parent_slot} instead of {correct}",
+                    )
+                )
                 return True
         return False
 

@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from typing import Callable, Iterable
-from simulation.theory.action import OfferBribery, TakeBribery, Vote
+from simulation.theory.action import BaseVote, OfferBribery, TakeBribery, Vote
 from simulation.theory.engine import Engine
 from simulation.theory.strategy.base import IBribeeStrategy, Params
+from simulation.theory.utils import Slot
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class BribeeStrategy(IBribeeStrategy):
         honest_entity: str,
         adv_entity: str,
         bribee_entities: set[str],
+        event_list: list[tuple[Slot, str]],
     ):
         assert (
             last_minute or not only_sending_to_deadline_proposing_entity
@@ -65,8 +67,16 @@ class BribeeStrategy(IBribeeStrategy):
 
         self.withheld_slots: list[int] = []
         self.aborted = False
+
+        self.event_list = event_list
         if break_bad_slot == self.base_slot:
             self.aborted = True
+            self.event_list.append(
+                (
+                    Slot(base_slot, 1),
+                    f"[{self.entity}] I will behave honestly and not accept any bribes",
+                )
+            )
 
     def adjust_strategy(self, engine: Engine) -> Engine:
         """
@@ -88,9 +98,28 @@ class BribeeStrategy(IBribeeStrategy):
             self.break_bad_slot is not None and engine.slot.num >= self.break_bad_slot
         ):
             engine = self.abort(engine)
+        elif engine.slot.phase == 1:
+            # Checking if adv aborted or not, if he is not following the plan, who will?
+
+            for slot in range(self.base_slot + 1, engine.slot.num + 1):
+                votes = engine.counted_votes[BaseVote(self.adv_entity, slot)]
+                for vote in votes:
+                    if vote.to_slot != self.plan_correct_votes[slot]:
+                        self.event_list.append(
+                            (
+                                engine.slot,
+                                f"[{self.entity}] Adversary voted for {vote.to_slot} instead of {self.plan_correct_votes[slot]}, abandoning the plan...",
+                            )
+                        )
+                        engine = self.abort(engine)
+                        break
+                if self.aborted:
+                    break
+
         return engine
 
     def abort(self, engine: Engine) -> Engine:
+        self.event_list.append((engine.slot, f"[{self.entity}] Aborting..."))
         engine = self.share_knowledge(engine)
         self.aborted = True
         return engine
@@ -98,6 +127,10 @@ class BribeeStrategy(IBribeeStrategy):
     def share_knowledge(self, engine: Engine) -> Engine:
         if not self.withheld_slots:
             return engine
+
+        self.event_list.append(
+            (engine.slot, f"[{self.entity}] I released {len(self.withheld_slots)}")
+        )
 
         engine = engine.add_knowledge(
             entity_to_knowledge={
@@ -112,6 +145,12 @@ class BribeeStrategy(IBribeeStrategy):
             engine = self.share_knowledge(engine)
             head = engine.head(self.honest_entity)
             knowledge = self.all_entities
+            self.event_list.append(
+                (
+                    engine.slot,
+                    f"[{self.entity}] I propose a block on top of slot {head}",
+                )
+            )
         else:
             head = self.plan_correct_votes[engine.slot.num - 1]
             if engine.slot.num < self.last_H:
@@ -120,10 +159,18 @@ class BribeeStrategy(IBribeeStrategy):
                         engine.slot.num - self.base_slot : self.last_E - self.base_slot
                     ]
                 )
-
+                self.event_list.append(
+                    (
+                        engine.slot,
+                        f"[{self.entity}] I secretly build a block on top of {head}",
+                    )
+                )
                 self.withheld_slots.append(engine.slot.num)
             else:
                 knowledge = self.all_entities
+                self.event_list.append(
+                    (engine.slot, f"[{self.entity}] I propose a block on top of {head}")
+                )
 
         censor: Callable[[Iterable[TakeBribery]], Iterable[TakeBribery]]
         if (
@@ -132,6 +179,12 @@ class BribeeStrategy(IBribeeStrategy):
         ):
             censor = lambda x: x
         else:
+            self.event_list.append(
+                (
+                    engine.slot,
+                    f"[{self.entity}] I will actively censor take_bribe calls that are not mine",
+                )
+            )
             censor = lambda takes: [
                 take for take in takes if take.reference.bribee == self.entity
             ]
@@ -151,11 +204,24 @@ class BribeeStrategy(IBribeeStrategy):
         for offer in new_offers:
             if offer.bribee != self.entity:
                 continue
-            if self.break_bad_slot is None or all(
-                attest_req.deadline is None
-                or attest_req.deadline >= self.break_bad_slot
-                for attest_req in offer.attests
+            if (
+                not self.aborted
+                and (self.break_bad_slot is None
+                or all(
+                    attest_req.deadline is None
+                    or attest_req.deadline <= self.break_bad_slot
+                    for attest_req in offer.attests
+                ))
             ):
+                voting_str = ", ".join(
+                    [
+                        f"{attest_req.from_slot} => {attest_req.slot}"
+                        for attest_req in offer.attests
+                    ]
+                )
+                self.event_list.append(
+                    (engine.slot, f"[{self.entity}] I accept the offer: {voting_str}")
+                )
                 self.accepted_offers.add(offer)
                 for attest_req in offer.attests:
                     assert attest_req.from_slot not in self.locked_slots_for_offers
@@ -173,6 +239,12 @@ class BribeeStrategy(IBribeeStrategy):
 
                 if slot not in self.already_voted_from:
                     self.already_voted_from.add(slot)
+                    self.event_list.append(
+                        (
+                            engine.slot,
+                            f"[{self.entity}] I vote for slot {head} (from slot {slot})",
+                        )
+                    )
                     votes.append(
                         Vote(
                             entity=self.entity,
@@ -187,6 +259,12 @@ class BribeeStrategy(IBribeeStrategy):
                 engine.slot.num not in self.locked_slots_for_offers
             ):  # if current vote is not locked, no problem, we just vote honestly :D
                 honest_head = engine.head(self.honest_entity)
+                self.event_list.append(
+                    (
+                        engine.slot,
+                        f"[{self.entity}] No accepted offers arrived for this slot, I am voting for slot {honest_head}",
+                    )
+                )
                 votes.append(
                     Vote(
                         entity=self.entity,
@@ -221,12 +299,42 @@ class BribeeStrategy(IBribeeStrategy):
                             self.already_voted_from.add(attest_req.from_slot)
                             if not self.only_sending_to_deadline_proposing_entity:
                                 votes.append(vote)
-
+                                self.event_list.append(
+                                    (
+                                        engine.slot,
+                                        f"[{self.entity}] Last minute vote from slot {attest_req.from_slot} => {attest_req.slot}",
+                                    )
+                                )
+                                self.event_list.append(
+                                    (
+                                        engine.slot,
+                                        f"[{self.entity}] I will send the take_bribe call as well",
+                                    )
+                                )
+                            else:
+                                self.event_list.append(
+                                    (
+                                        engine.slot,
+                                        f"[{self.entity}] I only put my attestation to the take_bribe tx: {attest_req.from_slot} => {attest_req.slot}",
+                                    )
+                                )
             else:
                 for offer in self.accepted_offers:
                     assert self.entity == offer.bribee
                     for index, attest_req in enumerate(offer.attests):
                         if engine.slot.num == attest_req.from_slot:
+                            self.event_list.append(
+                                (
+                                    engine.slot,
+                                    f"[{self.entity}] Sending my timely vote from slot {attest_req.from_slot} => {attest_req.slot}",
+                                )
+                            )
+                            self.event_list.append(
+                                (
+                                    engine.slot,
+                                    f"[{self.entity}] I will send the take_bribe call as well",
+                                )
+                            )
                             vote = Vote(
                                 entity=self.entity,
                                 from_slot=attest_req.from_slot,
@@ -260,7 +368,16 @@ class BribeeStrategy(IBribeeStrategy):
         if self.send_votes_when_able:
             my_knowledge = engine.take_briberies.get(self.entity)
             if my_knowledge:
+                all_votes = engine.all_votes()
                 engine = engine.add_votes({take.vote for take in my_knowledge})
+                new_votes = {take.vote for take in my_knowledge} - all_votes
+                if new_votes:
+                    self.event_list.append(
+                        (
+                            engine.slot,
+                            f"[{self.entity}] I have sent {len(new_votes)} votes to the public",
+                        )
+                    )
         return engine
 
     def withheld_blocks(self, engine: Engine) -> Engine:

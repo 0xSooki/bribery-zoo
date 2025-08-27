@@ -19,7 +19,7 @@ from simulation.theory.strategy.base import (
 )
 from simulation.theory.strategy.bribee import BribeeParams, BribeeStrategy
 from simulation.theory.strategy.honest import HonestStrategy
-from simulation.theory.utils import ATTESTATORS_PER_SLOT, B, BASE_INCREMENT
+from simulation.theory.utils import ATTESTATORS_PER_SLOT, B, BASE_INCREMENT, Slot
 
 
 @dataclass
@@ -28,9 +28,12 @@ class GameReport:
     slot_to_canonical: dict[int, str]
     entity_to_blocks: dict[int, int]
     success: bool
+    events: list[tuple[Slot, str]]
 
 
-def extract_end_info(engine: Engine, honest_entity: str) -> GameReport:
+def extract_end_info(
+    engine: Engine, events: list[tuple[Slot, str]], honest_entity: str
+) -> GameReport:
     head = engine.head(honest_entity)
     _slot = head
     canonicals_slots: list[int] = []
@@ -49,19 +52,25 @@ def extract_end_info(engine: Engine, honest_entity: str) -> GameReport:
             if canonical == "C":
                 entity_to_blocks[engine.slot_to_owner[slot]] += 1
     return GameReport(
-        engine.blocks[head].wallet_state, slot_to_canonical, entity_to_blocks, success
+        engine.blocks[head].wallet_state,
+        slot_to_canonical,
+        entity_to_blocks,
+        success,
+        events,
     )
+
 
 @dataclass
 class Deviation:
     params: Params
     cost: int
     damage: int
-    
+
     def ranking(self, alpha: float) -> float:
         if self.damage < 1_000:
-            return 1 + self.cost # we dont care about negligable attacks
+            return 1 + self.cost  # we dont care about negligable attacks
         return (1 + self.cost) ** alpha / self.damage
+
 
 @dataclass
 class Game:
@@ -85,6 +94,7 @@ class Game:
             ),
             base_slot=self.base_slot,
             chain_string=self.chain_string,
+            event_list=self.event_list,
             entity=self.honest_entity,
         )
 
@@ -101,6 +111,7 @@ class Game:
             entity=self.adv_entity,
             honest_entity=self.honest_entity,
             bribee_entities=self.bribee_entities,
+            event_list=self.event_list,
         )
 
     def bribee_player(self, name: str, params: BribeeParams) -> IBribeeStrategy:
@@ -117,6 +128,7 @@ class Game:
             honest_entity=self.honest_entity,
             adv_entity=self.adv_entity,
             bribee_entities=self.bribee_entities,
+            event_list=self.event_list,
         )
 
     def make_engine(self) -> Engine:
@@ -127,7 +139,8 @@ class Game:
 
     def play(
         self, adv_params: AdvParams, bribee_to_params: dict[str, BribeeParams]
-    ) -> Engine:
+    ) -> tuple[Engine, list[tuple[Slot, str]]]:
+        self.event_list: list[tuple[Slot, str]] = []
         honest = self.honest_player()
         adversary = self.adv_player(adv_params)
         bribees = {
@@ -170,7 +183,7 @@ class Game:
                 engine = byzantine.adjust_strategy(engine)
 
             engine = engine.slot_progress()
-        return honest.build(engine)  # final transactions
+        return honest.build(engine), self.event_list  # final transactions
 
     def all_adv_strategies(self) -> list[AdvParams]:
         result: list[AdvParams] = []
@@ -227,7 +240,7 @@ class Game:
 
     def compute_table(
         self,
-    ) -> dict[tuple[AdvParams, tuple[BribeeParams, ...]], GameReport]:
+    ) -> dict[frozendict[str, Params], GameReport]:
         adv_params = self.all_adv_strategies()
         all_bribee_params = [
             self.all_bribee_strategies(bribee) for bribee in self.bribee_entities
@@ -239,7 +252,7 @@ class Game:
 
             for bribee_settings in bribee_params:
                 # print((adv_param, bribee_settings))
-                engine = self.play(
+                engine, events = self.play(
                     adv_params=adv_param,
                     bribee_to_params={
                         bribee: settings
@@ -248,9 +261,18 @@ class Game:
                         )
                     },
                 )
-                result[(adv_param, bribee_settings)] = extract_end_info(
-                    engine, self.honest_entity
+                key = frozendict(
+                    {
+                        self.adv_entity: adv_param,
+                        **{
+                            entity: params
+                            for entity, params in zip(
+                                self.bribee_entities, bribee_settings
+                            )
+                        },
+                    }
                 )
+                result[key] = extract_end_info(engine, events, self.honest_entity)
 
         return result
 
@@ -258,19 +280,11 @@ class Game:
         self,
         block_reward: int,
         success_reward: int,
-        table: dict[tuple[AdvParams, tuple[BribeeParams, ...]], GameReport],
+        table: dict[frozendict[str, Params], GameReport],
     ) -> dict[frozendict[str, Params], dict[str, int]]:
         all_entities = self.bribee_entities.union((self.adv_entity, self.honest_entity))
         return {
-            frozendict(
-                {
-                    self.adv_entity: params[0],
-                    **{
-                        entity: params
-                        for entity, params in zip(self.bribee_entities, params[1])
-                    },
-                }
-            ): {
+            params: {
                 entity: report.wallet_state.address_to_money.get(entity, 0)
                 + report.entity_to_blocks.get(entity, 0) * block_reward
                 + bool(report.success and entity == self.adv_entity) * success_reward
@@ -334,7 +348,7 @@ class Game:
         table: dict[frozendict[str, Params], dict[str, int]],
         all_params: dict[str, list[Params]],
         point: frozendict[str, Params],
-        alpha: float
+        alpha: float,
     ) -> dict[str, dict[str, Deviation | None]]:
         result: dict[str, dict[str, Deviation | None]] = {}
         for player, deviations in all_params.items():
@@ -353,31 +367,43 @@ class Game:
                     damage = value - new_values[other_player]
                     if damage > 0:
                         candidate = Deviation(deviation, cost, damage)
-                        if best_deviation is None or best_deviation.ranking(alpha) > candidate.ranking(alpha):
+                        if best_deviation is None or best_deviation.ranking(
+                            alpha
+                        ) > candidate.ranking(alpha):
                             best_deviation = candidate
                 result[player][other_player] = best_deviation
         return result
-                    
-                        
-                    
 
+def pretty_print_events(events: list[tuple[Slot, str]]) -> None:
+    for slot, event in events:
+        print(f"Slot: {slot.num}: {event}")
 
-def pretty_print_equillibria(eq: tuple[frozendict[str, Params], dict[str, int]]) -> None:
+def pretty_print_equillibria(
+    eq: tuple[frozendict[str, Params], dict[str, int]], raw_table: dict[frozendict[str, Params], GameReport],
+) -> None:
     for entity, params in eq[0].items():
         print(f"{entity}:")
         for attr, value in params.__dict__.items():
             print(f"  {attr}={value}")
         print()
-    print("============")
+    print("===================")
     for entity, reward in eq[1].items():
         print(f"{entity} => {reward:_}")
+    print()
+    print("EVENTS FOR NASH EQUILLIBRIA:")
+    pretty_print_events(raw_table[eq[0]].events)
 
-def pretty_print_deviations(attacks: dict[str, dict[str, Deviation | None]]) -> None:
-    for attacked, entry in attacks.items():
-        print("================")
-        print(f"Attacker: {attacked}")
-        for attacker, deviation in entry.items():
-            print(f"  Attacked: {attacker}")
+
+def pretty_print_deviations(
+    attacks: dict[str, dict[str, Deviation | None]],
+    raw_table: dict[frozendict[str, Params], GameReport],
+    eq: frozendict[str, Params],
+) -> None:
+    for attacker, entry in attacks.items():
+        print("===========================")
+        print(f"Attacker: {attacker}")
+        for attacked, deviation in entry.items():
+            print(f"  Attacked: {attacked}")
             if deviation is None:
                 print("    -")
             else:
@@ -385,17 +411,23 @@ def pretty_print_deviations(attacks: dict[str, dict[str, Deviation | None]]) -> 
                 print(f"    New_params:")
                 for attr, value in deviation.params.__dict__.items():
                     print(f"      {attr}={value}")
+                print()
+                print("EVENTS:")
+                point = dict(eq)
+                point[attacker] = deviation.params
+                pretty_print_events(raw_table[frozendict(point)].events)
+                print()
 
 
 def main():
-    alpha = int(0.15 * ATTESTATORS_PER_SLOT)
-    beta = int(0.06 * ATTESTATORS_PER_SLOT)
+    alpha = int(0.4 * ATTESTATORS_PER_SLOT)
+    beta = int(0.16 * ATTESTATORS_PER_SLOT)
     honest = ATTESTATORS_PER_SLOT - alpha - beta
 
     game = Game(
         base_slot=0,
-        chain_string="AHB",
-        base_reward_unit=int(B * BASE_INCREMENT * 0.3),
+        chain_string="HAA",
+        base_reward_unit=int(B * BASE_INCREMENT * 0.2),
         deadline_reward_unit=0,  # B,
         deadline_payback_unit=0,  # B,
         honest_entity="H",
@@ -403,9 +435,9 @@ def main():
         bribee_entities={"B"},
         entity_to_voting_power={"H": honest, "A": alpha, "B": beta},
     )
-    best_adv = AdvParams(censor_from_slot=None, patient=True, break_bad_slot=2)
+    best_adv = AdvParams(censor_from_slot=None, patient=True, break_bad_slot=None)
     best_bribee = BribeeParams(
-        break_bad_slot=None,
+        break_bad_slot=3,
         censoring_from_slot=None,
         send_votes_when_able=False,
         finish_offers_regardless_of_abort=False,
@@ -415,14 +447,14 @@ def main():
 
     single = False
     if single:
-        engine = game.play(best_adv, {"B": best_bribee})
+        engine, events = game.play(best_adv, {"B": best_bribee})
         info = extract_end_info(engine, "H")
         print(info.success)
         print(info.wallet_state.address_to_money)
     else:
         raw_table = game.compute_table()
 
-        table = game.convert_table(50_000_000, 50_000_000, raw_table)
+        table = game.convert_table(50_000_000, int(1.8 * 50_000_000), raw_table)
         # print(table[(best_adv, (best_bribee,))])
         # exit()
         all_params = game.all_params()
@@ -430,11 +462,10 @@ def main():
         nash = Game.nash_equillibria(table, all_params, honest_player)
         print(len(nash))
         eq = max(nash, key=lambda x: x[1]["B"])
-        attacks = Game.damage_cost_ratio(table, all_params, eq[0], alpha = 0.5)
-        pretty_print_equillibria(eq)
+        attacks = Game.damage_cost_ratio(table, all_params, eq[0], alpha=0.5)
+        pretty_print_equillibria(eq, raw_table)
         print()
-        pretty_print_deviations(attacks)
-        
+        pretty_print_deviations(attacks, raw_table, eq[0])
 
 
 if __name__ == "__main__":

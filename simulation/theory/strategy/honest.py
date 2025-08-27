@@ -3,6 +3,7 @@ from typing import Collection
 from simulation.theory.action import Vote
 from simulation.theory.engine import Engine
 from simulation.theory.strategy.base import IHonestStrategy
+from simulation.theory.utils import Slot
 
 
 @dataclass
@@ -10,10 +11,14 @@ class HonestStrategy(IHonestStrategy):
     all_entities: Collection[str]
     base_slot: int
     chain_string: str
+    event_list: list[tuple[Slot, str]]
     entity: str = "H"
 
     def build(self, engine: Engine) -> Engine:
         head = engine.head(self.entity)
+        self.event_list.append(
+            (engine.slot, f"[{self.entity}] I propose a block on top of slot {head}")
+        )
         return engine.build_block(
             slot=engine.slot.num,
             parent_slot=head,
@@ -24,6 +29,7 @@ class HonestStrategy(IHonestStrategy):
 
     def vote(self, engine: Engine) -> Engine:
         head = engine.head(self.entity)
+        self.event_list.append((engine.slot, f"[{self.entity}] I vote for slot {head}"))
         return engine.add_votes(
             (
                 Vote(
