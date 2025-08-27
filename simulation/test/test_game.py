@@ -69,6 +69,7 @@ def test_game_success_test(
         send_votes_when_able=False,
         last_minute=False,
         only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=False,
     )
     outcome = table[(best_adv, (best_bribee,) * len(bribee_entities))]
     assert outcome.success
@@ -124,6 +125,7 @@ def test_game_AHA(
             send_votes_when_able=False,
             last_minute=level >= 1,
             only_sending_to_deadline_proposing_entity=level == 2,
+            finish_offers_regardless_of_abort=False,
         )
         outcome = table[(adv_strategy, (bribee_strategy,))]
         assert outcome.success
@@ -165,6 +167,7 @@ def test_game_AHA(
             send_votes_when_able=False,
             last_minute=level >= 1,
             only_sending_to_deadline_proposing_entity=level == 2,
+            finish_offers_regardless_of_abort=False,
         )
         outcome = table[(adv_strategy, (bribee_strategy,))]
         assert outcome.success == (level == 0)
@@ -197,7 +200,7 @@ def test_game_AHA(
     adv_strategy = AdvParams(
         censor_from_slot=3,
         patient=False,
-        break_bad_slot=2,
+        break_bad_slot=None,
     )
     bribee_strategy = BribeeParams(
         break_bad_slot=None,
@@ -205,6 +208,7 @@ def test_game_AHA(
         send_votes_when_able=False,
         last_minute=False,
         only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=False,
     )
     outcome = table[(adv_strategy, (bribee_strategy,))]
     base_rewards = [
@@ -227,6 +231,281 @@ def test_game_AHA(
         payment
         for payment in outcome.wallet_state.ledger
         if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "A"
+    ]
+    assert not deadline_paybacks
+
+    # Finishing regardless of abort 1
+    adv_strategy = AdvParams(
+        censor_from_slot=None,
+        patient=False,
+        break_bad_slot=None,
+    )
+    bribee_strategy = BribeeParams(
+        break_bad_slot=None,
+        censoring_from_slot=None,
+        send_votes_when_able=False,
+        last_minute=True,
+        only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=True,
+    )
+    outcome = table[(adv_strategy, (bribee_strategy,))]
+    base_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert base_rewards
+    deadline_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert not deadline_rewards
+    deadline_paybacks = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "A"
+    ]
+    assert not deadline_paybacks
+
+    # Finishing regardless of abort 2
+    adv_strategy = AdvParams(
+        censor_from_slot=None,
+        patient=True,
+        break_bad_slot=2,
+    )
+    bribee_strategy = BribeeParams(
+        break_bad_slot=None,
+        censoring_from_slot=None,
+        send_votes_when_able=False,
+        last_minute=True,
+        only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=True,
+    )
+    outcome = table[(adv_strategy, (bribee_strategy,))]
+    assert not outcome.success
+    base_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert base_rewards
+    deadline_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert not deadline_rewards
+    deadline_paybacks = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "A"
+    ]
+    assert not deadline_paybacks
+
+    # NOT finishing regardless of abort
+    adv_strategy = AdvParams(
+        censor_from_slot=None,
+        patient=True,
+        break_bad_slot=2,
+    )
+    bribee_strategy = BribeeParams(
+        break_bad_slot=None,
+        censoring_from_slot=None,
+        send_votes_when_able=False,
+        last_minute=True,
+        only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=False,
+    )
+    outcome = table[(adv_strategy, (bribee_strategy,))]
+    assert not outcome.success
+    base_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert base_rewards
+    deadline_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert not deadline_rewards
+    deadline_paybacks = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        and payment.from_address == "A"
+        and payment.to_address == "A"
+    ]
+    assert not deadline_paybacks
+
+
+@pytest.mark.parametrize(
+    "base_reward_unit, deadline_reward_unit, deadline_payback_unit", unit_arguments
+)
+def test_game_HAA(
+    base_reward_unit: float, deadline_reward_unit: float, deadline_payback_unit: float
+):
+    alpha = 0.4
+    beta = 0.14
+    adv_voting_power = int(alpha * ATTESTATORS_PER_SLOT)
+    bribee_voting_power = int(beta * ATTESTATORS_PER_SLOT)
+    honest = ATTESTATORS_PER_SLOT - adv_voting_power - bribee_voting_power
+    game = Game(
+        base_slot=0,
+        chain_string="HAA",
+        base_reward_unit=base_reward_unit,
+        deadline_reward_unit=deadline_reward_unit,
+        deadline_payback_unit=deadline_payback_unit,
+        honest_entity="H",
+        adv_entity="A",
+        bribee_entities={"B"},
+        entity_to_voting_power={
+            "H": honest,
+            "A": adv_voting_power,
+            "B": bribee_voting_power,
+        },
+    )
+    table = game.compute_table()
+
+    # Patient adversary
+    for level in range(3):
+        adv_strategy = AdvParams(
+            censor_from_slot=None,
+            patient=True,
+            break_bad_slot=None,
+        )
+        bribee_strategy = BribeeParams(
+            break_bad_slot=None,
+            censoring_from_slot=None,
+            send_votes_when_able=False,
+            last_minute=level >= 1,
+            only_sending_to_deadline_proposing_entity=level == 2,
+            finish_offers_regardless_of_abort=False,
+        )
+        outcome = table[(adv_strategy, (bribee_strategy,))]
+        assert outcome.success
+        base_rewards = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(base_reward_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "B"
+        ]
+        assert base_rewards
+        deadline_rewards = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "B"
+        ]
+        assert deadline_rewards
+        deadline_paybacks = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(deadline_payback_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "A"
+        ]
+        assert deadline_paybacks
+
+    # Inpatient adversary
+    for level in range(3):
+        adv_strategy = AdvParams(
+            censor_from_slot=None,
+            patient=False,
+            break_bad_slot=None,
+        )
+        bribee_strategy = BribeeParams(
+            break_bad_slot=None,
+            censoring_from_slot=None,
+            send_votes_when_able=False,
+            last_minute=level >= 1,
+            only_sending_to_deadline_proposing_entity=level == 2,
+            finish_offers_regardless_of_abort=False,
+        )
+        outcome = table[(adv_strategy, (bribee_strategy,))]
+        assert outcome.success
+        base_rewards = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(base_reward_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "B"
+        ]
+        assert base_rewards
+        deadline_rewards = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "B"
+        ]
+        assert deadline_rewards
+        deadline_paybacks = [
+            payment
+            for payment in outcome.wallet_state.ledger
+            if payment.amount == round(deadline_payback_unit * bribee_voting_power)
+            and payment.from_address == "A"
+            and payment.to_address == "A"
+        ]
+        assert deadline_paybacks
+
+    # Censorship
+    adv_strategy = AdvParams(
+        censor_from_slot=3,
+        patient=False,
+        break_bad_slot=None,
+    )
+    bribee_strategy = BribeeParams(
+        break_bad_slot=None,
+        censoring_from_slot=None,
+        send_votes_when_able=False,
+        last_minute=False,
+        only_sending_to_deadline_proposing_entity=False,
+        finish_offers_regardless_of_abort=False,
+    )
+    outcome = table[(adv_strategy, (bribee_strategy,))]
+    base_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(base_reward_unit * bribee_voting_power)
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert base_rewards
+    deadline_rewards = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+        and payment.from_address == "A"
+        and payment.to_address == "B"
+    ]
+    assert not deadline_rewards
+    deadline_paybacks = [
+        payment
+        for payment in outcome.wallet_state.ledger
+        if payment.amount == round(deadline_payback_unit * bribee_voting_power)
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]

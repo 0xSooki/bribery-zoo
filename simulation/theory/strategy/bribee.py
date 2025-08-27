@@ -2,14 +2,15 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 from simulation.theory.action import OfferBribery, TakeBribery, Vote
 from simulation.theory.engine import Engine
-from simulation.theory.strategy.base import IBribeeStrategy
+from simulation.theory.strategy.base import IBribeeStrategy, Params
 
 
 @dataclass(frozen=True)
-class BribeeParams:
+class BribeeParams(Params):
     break_bad_slot: int | None
     censoring_from_slot: int | None
     send_votes_when_able: bool
+    finish_offers_regardless_of_abort: bool
     last_minute: bool
     only_sending_to_deadline_proposing_entity: bool
 
@@ -20,6 +21,7 @@ class BribeeStrategy(IBribeeStrategy):
         break_bad_slot: int | None,
         censoring_from_slot: int | None,
         send_votes_when_able: bool,
+        finish_offers_regardless_of_abort: bool,
         last_minute: bool,
         only_sending_to_deadline_proposing_entity: bool,
         base_slot: int,
@@ -41,6 +43,7 @@ class BribeeStrategy(IBribeeStrategy):
         self.last_minute = (
             last_minute  # the bribee sends the accepted votes at the last minute
         )
+        self.finish_offers_regardless_of_abort = finish_offers_regardless_of_abort
         self.only_sending_to_deadline_proposing_entity = (
             only_sending_to_deadline_proposing_entity
         )
@@ -62,6 +65,8 @@ class BribeeStrategy(IBribeeStrategy):
 
         self.withheld_slots: list[int] = []
         self.aborted = False
+        if break_bad_slot == self.base_slot:
+            self.aborted = True
 
     def adjust_strategy(self, engine: Engine) -> Engine:
         """
@@ -158,7 +163,7 @@ class BribeeStrategy(IBribeeStrategy):
 
         self.takes: list[TakeBribery] = []
         votes: list[Vote] = []
-        if self.aborted:
+        if self.aborted and not self.finish_offers_regardless_of_abort:
             engine = self.share_knowledge(engine)
             head = engine.head(self.honest_entity)
 

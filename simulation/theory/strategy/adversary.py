@@ -5,12 +5,12 @@ from numbers import Real
 from frozendict import frozendict
 from simulation.theory.action import OfferBribery, SingleOfferBribery, TakeBribery, Vote
 from simulation.theory.engine import Engine
-from simulation.theory.strategy.base import IAdvStrategy
+from simulation.theory.strategy.base import IAdvStrategy, Params
 from simulation.theory.utils import PROPOSER_BOOST
 
 
 @dataclass(frozen=True)
-class AdvParams:
+class AdvParams(Params):
     censor_from_slot: int | None
     patient: bool
     break_bad_slot: int | None

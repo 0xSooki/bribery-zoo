@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-import itertools
+from itertools import product
 from numbers import Real
 
 from frozendict import frozendict
@@ -14,6 +14,7 @@ from simulation.theory.strategy.base import (
     IByzantineStrategy,
     IHonestStrategy,
     IStrategy,
+    Params,
 )
 from simulation.theory.strategy.bribee import BribeeParams, BribeeStrategy
 from simulation.theory.strategy.honest import HonestStrategy
@@ -97,6 +98,7 @@ class Game:
             censoring_from_slot=params.censoring_from_slot,
             send_votes_when_able=params.send_votes_when_able,
             last_minute=params.last_minute,
+            finish_offers_regardless_of_abort=params.finish_offers_regardless_of_abort,
             only_sending_to_deadline_proposing_entity=params.only_sending_to_deadline_proposing_entity,
             base_slot=self.base_slot,
             chain_string=self.chain_string,
@@ -198,16 +200,18 @@ class Game:
             ):
                 for send_votes in [False, True]:
                     for level in range(3):
-
-                        result.append(
-                            BribeeParams(
-                                break_bad_slot=break_bad_slot,
-                                censoring_from_slot=censoring_slots,
-                                send_votes_when_able=send_votes,
-                                last_minute=level >= 1,
-                                only_sending_to_deadline_proposing_entity=level == 2,
+                        for finish_offer in [False, True]:
+                            result.append(
+                                BribeeParams(
+                                    break_bad_slot=break_bad_slot,
+                                    censoring_from_slot=censoring_slots,
+                                    send_votes_when_able=send_votes,
+                                    last_minute=level >= 1,
+                                    only_sending_to_deadline_proposing_entity=level
+                                    == 2,
+                                    finish_offers_regardless_of_abort=finish_offer,
+                                )
                             )
-                        )
         return result
 
     def compute_table(
@@ -219,12 +223,10 @@ class Game:
         ]
 
         result: dict[tuple[AdvParams, tuple[BribeeParams, ...]], GameReport] = {}
-        cout = 0
-        bribee_params = itertools.product(*all_bribee_params)
+        bribee_params = list(product(*all_bribee_params))
         for adv_param in adv_params:
 
             for bribee_settings in bribee_params:
-                cout += 1
                 # print((adv_param, bribee_settings))
                 engine = self.play(
                     adv_params=adv_param,
@@ -238,9 +240,99 @@ class Game:
                 result[(adv_param, bribee_settings)] = extract_end_info(
                     engine, self.honest_entity
                 )
-        print(cout)
+
         return result
 
+    def convert_table(
+        self,
+        block_reward: int,
+        success_reward: int,
+        table: dict[tuple[AdvParams, tuple[BribeeParams, ...]], GameReport],
+    ) -> dict[tuple[AdvParams, tuple[BribeeParams, ...]], dict[str, int]]:
+        all_entities = self.bribee_entities.union((self.adv_entity, self.honest_entity))
+        return {
+            params: {
+                entity: report.wallet_state.address_to_money.get(entity, 0)
+                + report.entity_to_blocks.get(entity, 0) * block_reward
+                + bool(report.success and entity == self.adv_entity) * success_reward
+                for entity in all_entities
+            }
+            for params, report in table.items()
+        }
+
+    def nash_equillibria(
+        self, table: dict[tuple[AdvParams, tuple[BribeeParams, ...]], dict[str, int]]
+    ) -> list[tuple[dict[str, Params], dict[str, int]]]:
+        adv_params = self.all_adv_strategies()
+        all_bribee_params = {
+            bribee: self.all_bribee_strategies(bribee)
+            for bribee in self.bribee_entities
+        }
+        all_params: dict[str, list[Params]] = {
+            self.adv_entity: adv_params,
+            **all_bribee_params,
+        }
+        bribee_to_index = {b: i for i, b in enumerate(self.bribee_entities)}
+        
+        def value(params: dict[str, Params], entity: str) -> int:
+            adv_param: AdvParams = None
+            bribee_params: list[Params] = [None] * len(self.bribee_entities)
+            for player, param in params.items():
+                if player == self.adv_entity:
+                    adv_param = param
+                else:
+                    bribee_params[bribee_to_index[player]] = param
+            assert adv_param is not None
+            assert not any(param is None for param in bribee_params)
+            return table[(adv_param, tuple(bribee_params))][entity]
+
+        players = list(all_params.keys())
+        equilibria: list[tuple[dict[str, Params], dict[str, int]]] = []
+
+
+        # Cartesian product of all strategies for all players
+        for strategies in product(*(all_params[p] for p in players)):
+            profile = {p: s for p, s in zip(players, strategies)}
+
+
+            is_equilibrium = True
+            for player in players:
+                current_payoff = value(profile, player)
+                # Check deviations for this player
+                for alt_strategy in all_params[player]:
+                    if alt_strategy == profile[player]:
+                        continue
+
+                    deviated_profile = profile.copy()
+                    deviated_profile[player] = alt_strategy
+                    alt_payoff = value(deviated_profile, player)
+
+
+                    if alt_payoff > current_payoff:
+                        is_equilibrium = False
+                        break
+            
+
+
+                if not is_equilibrium:
+                    break
+
+
+            if is_equilibrium:
+                equilibria.append((profile, {entity: value(profile, entity) for entity in players}))
+
+
+        return equilibria
+
+def pretty_print(eq: tuple[dict[str, Params], dict[str, int]]):
+    for entity, params in eq[0].items():
+        print(f"{entity}:")
+        for attr, value in params.__dict__.items():
+            print(f"    {attr}={value}")
+        print()
+    print("============")
+    for entity, reward in eq[1].items():
+        print(f"{entity} => {reward:_}")
 
 def main():
     alpha = int(0.15 * ATTESTATORS_PER_SLOT)
@@ -250,49 +342,34 @@ def main():
     game = Game(
         base_slot=0,
         chain_string="AHA",
-        base_reward_unit=B * BASE_INCREMENT + 40,
-        deadline_reward_unit=B,
-        deadline_payback_unit=B,
+        base_reward_unit=int(B * BASE_INCREMENT * 0.3),
+        deadline_reward_unit=0, #B,
+        deadline_payback_unit=0, #B,
         honest_entity="H",
         adv_entity="A",
         bribee_entities={"B"},
         entity_to_voting_power={"H": honest, "A": alpha, "B": beta},
     )
-    best_adv = AdvParams(
-        censor_from_slot=None,
-        patient=False,
-        break_bad_slot=None,
-    )
-    best_bribee = BribeeParams(
-        break_bad_slot=None,
-        censoring_from_slot=None,
-        send_votes_when_able=False,
-        last_minute=False,
-        only_sending_to_deadline_proposing_entity=False,
-    )
-    engine = game.play(best_adv, {"B": best_bribee})
-    info = extract_end_info(engine, "H")
-    print(info)
-    """
-    engine = game.play(
-        adv_params=AdvParams(
-            entity_to_censor_from_slot={"B": None},
-            patient=False,
-            break_bad_slot=None,
-        ),
-        bribee_to_params={
-            "B": BribeeParams(
-                break_bad_slot=None,
-                censoring_from_slot=None,
-                send_votes_when_able=True,
-                last_minute=False,
-                only_sending_to_deadline_proposing_entity=False,
-            )
-        },
-    )
-    info = extract_end_info(engine, "H")
-    print(info)
-    """
+    best_adv = AdvParams(censor_from_slot=None, patient=True, break_bad_slot=0)
+    best_bribee = BribeeParams(break_bad_slot=0, censoring_from_slot=None, send_votes_when_able=False, finish_offers_regardless_of_abort=False, last_minute=False, only_sending_to_deadline_proposing_entity=False)
+
+    single = False
+    if single:
+        engine = game.play(best_adv, {"B": best_bribee})
+        info = extract_end_info(engine, "H")
+        print(info.success)
+        print(info.wallet_state.address_to_money)
+    else:
+        raw_table = game.compute_table()
+        
+        
+        table = game.convert_table(50_000_000, 50_000_000, raw_table)
+        #print(table[(best_adv, (best_bribee,))])
+        #exit()
+        nash = game.nash_equillibria(table)
+        print(len(nash))
+        pretty_print(max(nash, key=lambda x: x[1]["B"]))
+    
 
 
 if __name__ == "__main__":

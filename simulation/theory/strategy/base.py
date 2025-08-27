@@ -3,6 +3,10 @@ from abc import ABC, abstractmethod
 from simulation.theory.engine import Engine
 
 
+class Params:
+    pass
+
+
 class IStrategy(ABC):
     @abstractmethod
     def build(self, engine: Engine) -> Engine: ...
