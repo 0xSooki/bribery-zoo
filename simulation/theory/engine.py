@@ -9,6 +9,7 @@ from simulation.theory.action import (
     Block,
     OfferBribery,
     PayToAttestState,
+    Payment,
     TakeBribery,
     Vote,
     WalletState,
@@ -51,12 +52,12 @@ class Engine:
         return Engine(**data)
 
     def head(self, entity: str) -> int:
-        slot_to_acc_votes: dict[int, int] = {}
+        slot_to_acc_votes: dict[int, int] = defaultdict(int)
         knowledge = self.knowledge_of_blocks.get(entity, frozenset())
         for slot, votes in sorted(self.slot_to_votes.items(), key=lambda x: x[0]):
             if slot not in knowledge:
                 continue
-            slot_to_acc_votes[slot] = votes
+            slot_to_acc_votes[slot] += votes
             if slot == self.slot.num and self.blocks[slot].on_time:
                 slot_to_acc_votes[slot] += PROPOSER_BOOST
 
@@ -76,6 +77,8 @@ class Engine:
         while head in slot_to_desc:
             votes = [(desc, slot_to_acc_votes[desc]) for desc in slot_to_desc[head]]
             best = max(votes, key=lambda x: x[1])
+            if not all([vote < best[1] for slot, vote in votes if slot != best[0]]):
+                pass
             assert all([vote < best[1] for slot, vote in votes if slot != best[0]])
             head = best[0]
 
@@ -284,22 +287,28 @@ class Engine:
 
                     if extra_funds:
                         wallet_state = wallet_state.pay(
-                            from_address=take_bribery.reference.briber,
-                            to_address=take_bribery.reference.bribed_proposer,
-                            amount=take_bribery.reference.deadline_payback,
-                            comment="Proposer reward for not censoring",
+                            Payment(
+                                from_address=take_bribery.reference.briber,
+                                to_address=take_bribery.reference.bribed_proposer,
+                                amount=take_bribery.reference.deadline_payback,
+                                comment="Proposer reward for not censoring",
+                            )
                         )
                         wallet_state = wallet_state.pay(
-                            from_address=take_bribery.reference.briber,
-                            to_address=take_bribery.reference.bribee,
-                            amount=take_bribery.reference.deadline_reward,
-                            comment="Reward to bribee for voting timely",
+                            Payment(
+                                from_address=take_bribery.reference.briber,
+                                to_address=take_bribery.reference.bribee,
+                                amount=take_bribery.reference.deadline_reward,
+                                comment="Reward to bribee for voting timely",
+                            )
                         )
                     wallet_state = wallet_state.pay(
-                        from_address=take_bribery.reference.briber,
-                        to_address=take_bribery.reference.bribee,
-                        amount=take_bribery.reference.base_reward,
-                        comment="Paying for base reward to bribee",
+                        Payment(
+                            from_address=take_bribery.reference.briber,
+                            to_address=take_bribery.reference.bribee,
+                            amount=take_bribery.reference.base_reward,
+                            comment="Paying for base reward to bribee",
+                        )
                     )
                     state = state.pay(extra_funds=extra_funds)
                 prev_state[take_bribery.reference] = state
@@ -348,26 +357,32 @@ class Engine:
             punishment *= BASE_INCREMENT * B * vote.amount()
 
             wallet_state = wallet_state.pay(
-                from_address="cons",
-                to_address=vote.entity,
-                amount=int(reward + punishment),
-                comment="Consensus protocol paying for voting",
+                Payment(
+                    from_address="cons",
+                    to_address=vote.entity,
+                    amount=int(reward + punishment),
+                    comment="Consensus protocol paying for voting",
+                )
             )
             wallet_state = wallet_state.pay(  # paying to the proposer as well
-                from_address="cons",
-                to_address=entity,
-                amount=int(reward * W_p / (W_sum - W_p)),
-                comment="Consensus protocol paying for including votes",
+                Payment(
+                    from_address="cons",
+                    to_address=entity,
+                    amount=int(reward * W_p / (W_sum - W_p)),
+                    comment="Consensus protocol paying for including votes",
+                )
             )
 
         if final:
             for offer, state in prev_state.items():
                 if state.paid and not state.extra_funds:
                     wallet_state = wallet_state.pay(
-                        from_address=offer.briber,
-                        to_address="burned_money",
-                        amount=offer.deadline_payback + offer.deadline_reward,
-                        comment="Burning money of the briber",
+                        Payment(
+                            from_address=offer.briber,
+                            to_address="burned_money",
+                            amount=offer.deadline_payback + offer.deadline_reward,
+                            comment="Burning money of the briber",
+                        )
                     )
 
         block = Block(
@@ -398,6 +413,9 @@ class Engine:
                 "knowledge_of_blocks": frozendict(knowledge_of_blocks),
             }
         )
+
+    def all_votes(self) -> set[Vote]:
+        return {vote for votes in self.counted_votes.values() for vote in votes}
 
     @staticmethod
     def make_engine(
