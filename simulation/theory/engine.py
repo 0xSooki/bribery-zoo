@@ -10,6 +10,7 @@ from simulation.theory.action import (
     OfferBribery,
     PayToAttestState,
     Payment,
+    SymbolicPayment,
     TakeBribery,
     Vote,
     WalletState,
@@ -286,27 +287,30 @@ class Engine:
                         ) and not excluded.intersection(branch)
 
                     if extra_funds:
-                        wallet_state = wallet_state.pay(
-                            Payment(
+                        wallet_state = wallet_state.symbolic_pay(
+                            SymbolicPayment(
                                 from_address=take_bribery.reference.briber,
                                 to_address=take_bribery.reference.bribed_proposer,
-                                amount=take_bribery.reference.deadline_payback,
+                                all_indices=take_bribery.reference.all_indices,
+                                symbol="deadline_payback",
                                 comment="Proposer reward for not censoring",
                             )
                         )
-                        wallet_state = wallet_state.pay(
-                            Payment(
+                        wallet_state = wallet_state.symbolic_pay(
+                            SymbolicPayment(
                                 from_address=take_bribery.reference.briber,
                                 to_address=take_bribery.reference.bribee,
-                                amount=take_bribery.reference.deadline_reward,
+                                all_indices=take_bribery.reference.all_indices,
+                                symbol="deadline_reward",
                                 comment="Reward to bribee for voting timely",
                             )
                         )
-                    wallet_state = wallet_state.pay(
-                        Payment(
+                    wallet_state = wallet_state.symbolic_pay(
+                        SymbolicPayment(
                             from_address=take_bribery.reference.briber,
                             to_address=take_bribery.reference.bribee,
-                            amount=take_bribery.reference.base_reward,
+                            all_indices=take_bribery.reference.all_indices,
+                            symbol="base_reward",
                             comment="Paying for base reward to bribee",
                         )
                     )
@@ -376,11 +380,21 @@ class Engine:
         if final:
             for offer, state in prev_state.items():
                 if state.paid and not state.extra_funds:
-                    wallet_state = wallet_state.pay(
-                        Payment(
+                    wallet_state = wallet_state.symbolic_pay(
+                        SymbolicPayment(
                             from_address=offer.briber,
                             to_address="burned_money",
-                            amount=offer.deadline_payback + offer.deadline_reward,
+                            all_indices=offer.all_indices,
+                            symbol="deadline_payback",
+                            comment="Burning money of the briber",
+                        )
+                    )
+                    wallet_state = wallet_state.symbolic_pay(
+                        SymbolicPayment(
+                            from_address=offer.briber,
+                            to_address="burned_money",
+                            all_indices=offer.all_indices,
+                            symbol="deadline_reward",
                             comment="Burning money of the briber",
                         )
                     )

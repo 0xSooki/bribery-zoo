@@ -204,14 +204,13 @@ class BribeeStrategy(IBribeeStrategy):
         for offer in new_offers:
             if offer.bribee != self.entity:
                 continue
-            if (
-                not self.aborted
-                and (self.break_bad_slot is None
+            if not self.aborted and (
+                self.break_bad_slot is None
                 or all(
                     attest_req.deadline is None
                     or attest_req.deadline <= self.break_bad_slot
                     for attest_req in offer.attests
-                ))
+                )
             ):
                 voting_str = ", ".join(
                     [

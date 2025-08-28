@@ -186,9 +186,7 @@ def test_declined_takeBribery(
                 deadline=3,
             ),
         ),
-        base_reward=base_reward,
-        deadline_reward=deadline_reward,
-        deadline_payback=deadline_payback,
+        all_indices=1,
         bribee="B",
         briber="A",
         bribed_proposer="A",
@@ -319,9 +317,14 @@ def test_declined_takeBribery(
     assert head_B == 2
 
     wallet_state = engine.blocks[2].wallet_state
-    assert wallet_state.address_to_money.get("A", 0) == 0
-    assert wallet_state.address_to_money.get("H", 0) == 0
-    assert wallet_state.address_to_money.get("B", 0) == 0
+    address_to_money = wallet_state.compute_real_address_to_money(
+        base_reward=base_reward,
+        deadline_reward=deadline_reward,
+        deadline_payback=deadline_payback,
+    )
+    assert address_to_money.get("A", 0) == 0
+    assert address_to_money.get("H", 0) == 0
+    assert address_to_money.get("B", 0) == 0
 
 
 @pytest.mark.parametrize("base_reward, deadline_reward, deadline_payback", arguments)
@@ -367,9 +370,7 @@ def test_accepted_takeBribery(
                 deadline=3,
             ),
         ),
-        base_reward=base_reward,
-        deadline_reward=deadline_reward,
-        deadline_payback=deadline_payback,
+        all_indices=1,
         bribee="B",
         briber="A",
         bribed_proposer="A",
@@ -509,9 +510,14 @@ def test_accepted_takeBribery(
     assert head_B == 3
 
     wallet_state = engine.blocks[3].wallet_state
-    assert wallet_state.address_to_money.get("A", 0) == -base_reward - deadline_reward
-    assert wallet_state.address_to_money.get("H", 0) == 0
-    assert wallet_state.address_to_money.get("B", 0) == base_reward + deadline_reward
+    address_to_money = wallet_state.compute_real_address_to_money(
+        base_reward=base_reward,
+        deadline_reward=deadline_reward,
+        deadline_payback=deadline_payback,
+    )
+    assert address_to_money.get("A", 0) == -base_reward - deadline_reward
+    assert address_to_money.get("H", 0) == 0
+    assert address_to_money.get("B", 0) == base_reward + deadline_reward
 
 
 @pytest.mark.parametrize("base_reward, deadline_reward, deadline_payback", arguments)
@@ -557,9 +563,7 @@ def test_censored_takeBribery(
                 deadline=3,
             ),
         ),
-        base_reward=base_reward,
-        deadline_reward=deadline_reward,
-        deadline_payback=deadline_payback,
+        all_indices=1,
         bribee="B",
         briber="A",
         bribed_proposer="A",
@@ -699,9 +703,14 @@ def test_censored_takeBribery(
     assert head_B == 3
 
     wallet_state = engine.blocks[3].wallet_state
-    assert wallet_state.address_to_money.get("A", 0) == 0
-    assert wallet_state.address_to_money.get("H", 0) == 0
-    assert wallet_state.address_to_money.get("B", 0) == 0
+    address_to_money = wallet_state.compute_real_address_to_money(
+        base_reward=base_reward,
+        deadline_reward=deadline_reward,
+        deadline_payback=deadline_payback,
+    )
+    assert address_to_money.get("A", 0) == 0
+    assert address_to_money.get("H", 0) == 0
+    assert address_to_money.get("B", 0) == 0
 
     engine = engine.slot_progress()
     engine = engine.slot_progress()
@@ -717,9 +726,14 @@ def test_censored_takeBribery(
     )
 
     wallet_state = engine.blocks[4].wallet_state
+    address_to_money = wallet_state.compute_real_address_to_money(
+        base_reward=base_reward,
+        deadline_reward=deadline_reward,
+        deadline_payback=deadline_payback,
+    )
     assert (
-        wallet_state.address_to_money.get("A", 0)
+        address_to_money.get("A", 0)
         == -base_reward - deadline_payback - deadline_reward
     )
-    assert wallet_state.address_to_money.get("H", 0) == 0
-    assert wallet_state.address_to_money.get("B", 0) == base_reward
+    assert address_to_money.get("H", 0) == 0
+    assert address_to_money.get("B", 0) == base_reward

@@ -1,6 +1,7 @@
 from frozendict import frozendict
 import pytest
 from simulation.theory.strategy.adversary import AdvParams
+from simulation.theory.strategy.analize import GameParams, concrete_table
 from simulation.theory.strategy.bribee import BribeeParams
 from simulation.theory.strategy.game import Game
 from simulation.theory.utils import ATTESTATORS_PER_SLOT, B, BASE_INCREMENT
@@ -44,9 +45,6 @@ def test_game_success_test(
     game = Game(
         base_slot=0,
         chain_string=chain_string,
-        base_reward_unit=2224,
-        deadline_reward_unit=33,
-        deadline_payback_unit=11,
         honest_entity="H",
         adv_entity="A",
         bribee_entities=bribee_entities,
@@ -57,7 +55,15 @@ def test_game_success_test(
             **({"C": bribee2_voting_power} if bribee2_voting_power else {}),
         },
     )
-    table = game.compute_table()
+    run = game.compute_table()
+    game_params = GameParams(
+        block_reward=-1,
+        success_reward=1,
+        base_reward_unit=3,
+        deadline_reward_unit=3143,
+        deadline_payback_unit=31,
+    )
+    table = concrete_table(run, game_params)
     best_adv = AdvParams(
         censor_from_slot=None,
         patient=False,
@@ -102,9 +108,6 @@ def test_game_AHA(
     game = Game(
         base_slot=0,
         chain_string="AHA",
-        base_reward_unit=base_reward_unit,
-        deadline_reward_unit=deadline_reward_unit,
-        deadline_payback_unit=deadline_payback_unit,
         honest_entity="H",
         adv_entity="A",
         bribee_entities={"B"},
@@ -114,7 +117,18 @@ def test_game_AHA(
             "B": bribee_voting_power,
         },
     )
-    table = game.compute_table()
+    game_params = GameParams(
+        block_reward=0,
+        success_reward=0,
+        base_reward_unit=base_reward_unit,
+        deadline_reward_unit=deadline_reward_unit,
+        deadline_payback_unit=deadline_payback_unit,
+    )
+    run = game.compute_table()
+    table = concrete_table(
+        run=run,
+        game_params=game_params,
+    )
 
     # Patient adversary
     for level in range(3):
@@ -135,24 +149,27 @@ def test_game_AHA(
         assert outcome.success
         base_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "base_reward"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
-        assert base_rewards
+        assert len(base_rewards) == 1
         deadline_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_reward"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
-        assert deadline_rewards
+        assert len(deadline_rewards) == 1
         deadline_paybacks = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_payback"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "A"
         ]
@@ -177,24 +194,26 @@ def test_game_AHA(
         assert outcome.success == (level == 0)
         base_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "base_reward"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
         assert bool(base_rewards) == (level == 0)
         deadline_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_reward"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
-        assert bool(deadline_rewards) == (level == 0)
         deadline_paybacks = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_payback"
+            and payment.all_indices == bribee_voting_power * 2
             and payment.from_address == "A"
             and payment.to_address == "A"
         ]
@@ -217,24 +236,27 @@ def test_game_AHA(
     outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "base_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert base_rewards
     deadline_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert not deadline_rewards
     deadline_paybacks = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_payback"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]
@@ -257,24 +279,27 @@ def test_game_AHA(
     outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "base_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert base_rewards
     deadline_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert not deadline_rewards
     deadline_paybacks = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_payback"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]
@@ -298,24 +323,27 @@ def test_game_AHA(
     assert not outcome.success
     base_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "base_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert base_rewards
     deadline_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert not deadline_rewards
     deadline_paybacks = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_payback"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]
@@ -339,24 +367,27 @@ def test_game_AHA(
     assert not outcome.success
     base_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(base_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "base_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert base_rewards
     deadline_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_reward_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_reward"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert not deadline_rewards
     deadline_paybacks = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_payback_unit * bribee_voting_power) * 2
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_payback"
+        and payment.all_indices == bribee_voting_power * 2
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]
@@ -377,9 +408,6 @@ def test_game_HAA(
     game = Game(
         base_slot=0,
         chain_string="HAA",
-        base_reward_unit=base_reward_unit,
-        deadline_reward_unit=deadline_reward_unit,
-        deadline_payback_unit=deadline_payback_unit,
         honest_entity="H",
         adv_entity="A",
         bribee_entities={"B"},
@@ -389,7 +417,15 @@ def test_game_HAA(
             "B": bribee_voting_power,
         },
     )
-    table = game.compute_table()
+    run = game.compute_table()
+    game_params = GameParams(
+        block_reward=0,
+        success_reward=0,
+        base_reward_unit=base_reward_unit,
+        deadline_reward_unit=deadline_reward_unit,
+        deadline_payback_unit=deadline_payback_unit,
+    )
+    table = concrete_table(run, game_params)
 
     # Patient adversary
     for level in range(3):
@@ -410,24 +446,27 @@ def test_game_HAA(
         assert outcome.success
         base_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(base_reward_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "base_reward"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
         assert base_rewards
         deadline_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_reward"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
         assert deadline_rewards
         deadline_paybacks = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_payback_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_payback"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "A"
         ]
@@ -452,24 +491,27 @@ def test_game_HAA(
         assert outcome.success
         base_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(base_reward_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "base_reward"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
         assert base_rewards
         deadline_rewards = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_reward"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "B"
         ]
         assert deadline_rewards
         deadline_paybacks = [
             payment
-            for payment in outcome.wallet_state.ledger
-            if payment.amount == round(deadline_payback_unit * bribee_voting_power)
+            for payment in outcome.wallet_state.symbolic_ledger
+            if payment.symbol == "deadline_payback"
+            and payment.all_indices == bribee_voting_power
             and payment.from_address == "A"
             and payment.to_address == "A"
         ]
@@ -492,24 +534,27 @@ def test_game_HAA(
     outcome = table[frozendict({"A": adv_strategy, "B": bribee_strategy})]
     base_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(base_reward_unit * bribee_voting_power)
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "base_reward"
+        and payment.all_indices == bribee_voting_power
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert base_rewards
     deadline_rewards = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_reward_unit * bribee_voting_power)
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_reward"
+        and payment.all_indices == bribee_voting_power
         and payment.from_address == "A"
         and payment.to_address == "B"
     ]
     assert not deadline_rewards
     deadline_paybacks = [
         payment
-        for payment in outcome.wallet_state.ledger
-        if payment.amount == round(deadline_payback_unit * bribee_voting_power)
+        for payment in outcome.wallet_state.symbolic_ledger
+        if payment.symbol == "deadline_payback"
+        and payment.all_indices == bribee_voting_power
         and payment.from_address == "A"
         and payment.to_address == "A"
     ]

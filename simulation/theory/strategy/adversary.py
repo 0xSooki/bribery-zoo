@@ -20,9 +20,6 @@ class AdvStrategy(IAdvStrategy):
     def __init__(
         self,
         censor_from_slot: int | None,
-        base_reward_unit: Real,
-        deadline_reward_unit: Real,
-        deadline_payback_unit: Real,
         patient: bool,
         break_bad_slot: int | None,
         base_slot: int,
@@ -33,9 +30,6 @@ class AdvStrategy(IAdvStrategy):
         event_list: list[tuple[Slot, str]],
     ):
         self.censor_from_slot = censor_from_slot
-        self.base_reward_unit = base_reward_unit
-        self.deadline_payback_unit = deadline_payback_unit
-        self.deadline_reward_unit = deadline_reward_unit
         self.patient = patient
         self.break_bad_slot = break_bad_slot
         self.base_slot = base_slot
@@ -155,11 +149,7 @@ class AdvStrategy(IAdvStrategy):
             offer_briberies.append(
                 OfferBribery(
                     attests=single_offers,
-                    base_reward=math.ceil(self.base_reward_unit * all_indices),
-                    deadline_reward=math.ceil(self.deadline_reward_unit * all_indices),
-                    deadline_payback=math.ceil(
-                        self.deadline_payback_unit * all_indices
-                    ),
+                    all_indices=all_indices,
                     bribee=bribee,
                     briber=self.entity,
                     bribed_proposer=engine.slot_to_owner[deadline],

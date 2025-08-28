@@ -1,4 +1,6 @@
 from dataclasses import dataclass, field
+import math
+from numbers import Real
 from typing import Sequence
 
 from frozendict import frozendict
@@ -57,8 +59,7 @@ class OfferBribery(AdvAction):  # phase 1
     Already signed transaction
     Attributes:
         - attests: All the attestation requests to be verified later (if one is missing, no payment)
-        - base_reward: Amount payed to entity in case of takeBribery, regardless of deadline(s) or success of fork. The main reason is that we reward them if they do not double fork
-        - deadline_reward: Amount payed if all verifications were done before the deadline(s) and fork succeded
+        - all_indices: Number of bribed validators. All rewards (base_reward...) will be scaled linearly to this
         - bribee: Bribed entity
         - briber: Entity paying/offering the bribe
         - bribed_proposer: Entity payed if deadline+fork is successful. Usually the same entity to include the takeBribery (can be the bribee).
@@ -69,9 +70,7 @@ class OfferBribery(AdvAction):  # phase 1
     attests: Sequence[
         SingleOfferBribery
     ]  # Everyone of them must be verified for reward
-    base_reward: int
-    deadline_reward: int
-    deadline_payback: int
+    all_indices: int
     bribee: str
     briber: str
     bribed_proposer: str
@@ -140,10 +139,20 @@ class Payment:
 
 
 @dataclass(frozen=True)
+class SymbolicPayment:
+    from_address: str
+    to_address: str
+    all_indices: int  # The number of bribed indices
+    symbol: str  # e.g. "base_reward". After the winning wallet state is generated, math.ceil(value_of_symbol * indices) is issued
+    comment: str = ""
+
+
+@dataclass(frozen=True)
 class WalletState:
     # has_infinite_money: frozenset[str] = field(default_factory=lambda: HAS_INFINITE_MONEY)
     address_to_money: frozendict[str, int] = field(default_factory=frozendict)
     ledger: tuple[Payment, ...] = field(default_factory=tuple)
+    symbolic_ledger: tuple[SymbolicPayment, ...] = field(default_factory=tuple)
 
     def pay(self, payment: Payment) -> "WalletState":
         # assert amount > 0
@@ -156,12 +165,45 @@ class WalletState:
 
         if payment.to_address not in new_address_to_money:
             new_address_to_money[payment.to_address] = 0
+            
         new_address_to_money[payment.to_address] += payment.amount
         new_address_to_money[payment.from_address] -= payment.amount
         new_ledger = list(self.ledger)
         new_ledger.append(payment)
-        return WalletState(frozendict(new_address_to_money), ledger=tuple(new_ledger))
+        return WalletState(
+            frozendict(new_address_to_money),
+            ledger=tuple(new_ledger),
+            symbolic_ledger=self.symbolic_ledger,
+        )
 
+    def symbolic_pay(self, payment: SymbolicPayment) -> "WalletState":
+        new_symbolic_ledger = list(self.symbolic_ledger)
+        new_symbolic_ledger.append(payment)
+        return WalletState(
+            address_to_money=self.address_to_money,
+            ledger=self.ledger,
+            symbolic_ledger=tuple(new_symbolic_ledger),
+        )
+    
+    def compute_real_address_to_money(self, **kwargs) -> dict[str, int]:
+        """
+        Substantiates all symbolic payments with the symbols
+        """
+        address_to_money = dict(self.address_to_money)
+        for tx in self.symbolic_ledger:
+            amount = math.ceil(kwargs[tx.symbol] * tx.all_indices)
+            if tx.from_address not in address_to_money:
+                address_to_money[tx.from_address] = 0
+
+            if tx.to_address not in address_to_money:
+                address_to_money[tx.to_address] = 0
+                
+            address_to_money[tx.to_address] += amount
+            address_to_money[tx.from_address] -= amount
+        return address_to_money
+    
+    # def all_ledger(self):
+    #    return list(self.ledger) + list(self.symbolic_ledger)
 
 @dataclass(frozen=True)
 class Block:

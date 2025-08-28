@@ -1,12 +1,8 @@
-from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
-import math
-from numbers import Real
 
 from frozendict import frozendict
 
-from simulation.theory.action import WalletState
 from simulation.theory.engine import Engine
 from simulation.theory.strategy.adversary import AdvParams, AdvStrategy
 from simulation.theory.strategy.base import (
@@ -19,67 +15,26 @@ from simulation.theory.strategy.base import (
 )
 from simulation.theory.strategy.bribee import BribeeParams, BribeeStrategy
 from simulation.theory.strategy.honest import HonestStrategy
-from simulation.theory.utils import ATTESTATORS_PER_SLOT, B, BASE_INCREMENT, Slot
+from simulation.theory.utils import Slot
 
 
-@dataclass
-class GameReport:
-    wallet_state: WalletState
-    slot_to_canonical: dict[int, str]
-    entity_to_blocks: dict[int, int]
-    success: bool
-    events: list[tuple[Slot, str]]
 
-
-def extract_end_info(
-    engine: Engine, events: list[tuple[Slot, str]], honest_entity: str
-) -> GameReport:
-    head = engine.head(honest_entity)
-    _slot = head
-    canonicals_slots: list[int] = []
-    while _slot in engine.blocks:
-        canonicals_slots.append(_slot)
-        _slot = engine.blocks[_slot].parent_slot
-    slot_to_canonical: dict[int, str] = {
-        slot: "C" if slot in canonicals_slots else "N" for slot in engine.blocks
-    }
-    entity_to_blocks: dict[str, int] = defaultdict(int)
-    success = True
-    for slot, canonical in slot_to_canonical.items():
-        if slot in engine.slot_to_owner:
-            if (engine.slot_to_owner[slot] == honest_entity) == (canonical == "C"):
-                success = False
-            if canonical == "C":
-                entity_to_blocks[engine.slot_to_owner[slot]] += 1
-    return GameReport(
-        engine.blocks[head].wallet_state,
-        slot_to_canonical,
-        entity_to_blocks,
-        success,
-        events,
-    )
 
 
 @dataclass
-class Deviation:
-    params: Params
-    cost: int
-    damage: int
+class SymbolicRun:
+    table: dict[frozendict[str, Params], tuple[Engine, list[tuple[Slot, str]]]]
+    all_params: dict[str, list[Params]]
+    honest_player: str
+    adv_player: str
 
-    def ranking(self, alpha: float) -> float:
-        if self.damage < 1_000:
-            return 1 + self.cost  # we dont care about negligable attacks
-        return (1 + self.cost) ** alpha / self.damage
+
 
 
 @dataclass
 class Game:
     base_slot: int
     chain_string: str
-
-    base_reward_unit: Real
-    deadline_reward_unit: Real
-    deadline_payback_unit: Real
 
     honest_entity: str
     adv_entity: str
@@ -101,9 +56,6 @@ class Game:
     def adv_player(self, params: AdvParams) -> IAdvStrategy:
         return AdvStrategy(
             censor_from_slot=params.censor_from_slot,
-            base_reward_unit=self.base_reward_unit,
-            deadline_reward_unit=self.deadline_reward_unit,
-            deadline_payback_unit=self.deadline_payback_unit,
             patient=params.patient,
             break_bad_slot=params.break_bad_slot,
             base_slot=self.base_slot,
@@ -238,16 +190,37 @@ class Game:
                             )
         return result
 
+    def all_params(self) -> dict[str, list[Params]]:
+        adv_params = self.all_adv_strategies()
+        all_bribee_params = {
+            bribee: self.all_bribee_strategies(bribee)
+            for bribee in self.bribee_entities
+        }
+        return  {
+            self.adv_entity: adv_params,
+            **all_bribee_params,
+        }
+
     def compute_table(
         self,
-    ) -> dict[frozendict[str, Params], GameReport]:
+    ) -> SymbolicRun:
         adv_params = self.all_adv_strategies()
-        all_bribee_params = [
-            self.all_bribee_strategies(bribee) for bribee in self.bribee_entities
-        ]
+        all_bribee_params = {
+            bribee: self.all_bribee_strategies(bribee)
+            for bribee in self.bribee_entities
+        }
+        all_params =  {
+            self.adv_entity: adv_params,
+            **all_bribee_params,
+        }
 
-        result: dict[tuple[AdvParams, tuple[BribeeParams, ...]], GameReport] = {}
-        bribee_params = list(product(*all_bribee_params))
+        result: SymbolicRun = SymbolicRun(
+            table={},
+            all_params=all_params,
+            honest_player=self.honest_entity,
+            adv_player=self.adv_entity,
+        )
+        bribee_params = list(product(*all_bribee_params.values()))
         for adv_param in adv_params:
 
             for bribee_settings in bribee_params:
@@ -272,201 +245,7 @@ class Game:
                         },
                     }
                 )
-                result[key] = extract_end_info(engine, events, self.honest_entity)
+                result.table[key] = (engine, events)
 
         return result
 
-    def convert_table(
-        self,
-        block_reward: int,
-        success_reward: int,
-        table: dict[frozendict[str, Params], GameReport],
-    ) -> dict[frozendict[str, Params], dict[str, int]]:
-        all_entities = self.bribee_entities.union((self.adv_entity, self.honest_entity))
-        return {
-            params: {
-                entity: report.wallet_state.address_to_money.get(entity, 0)
-                + report.entity_to_blocks.get(entity, 0) * block_reward
-                + bool(report.success and entity == self.adv_entity) * success_reward
-                for entity in all_entities
-            }
-            for params, report in table.items()
-        }
-
-    def all_params(self) -> dict[str, list[Params]]:
-        adv_params = self.all_adv_strategies()
-        all_bribee_params = {
-            bribee: self.all_bribee_strategies(bribee)
-            for bribee in self.bribee_entities
-        }
-        return {
-            self.adv_entity: adv_params,
-            **all_bribee_params,
-        }
-
-    @staticmethod
-    def nash_equillibria(
-        table: dict[frozendict[str, Params], dict[str, int]],
-        all_params: dict[str, list[Params]],
-        honest_player: str,
-    ) -> list[tuple[frozendict[str, Params], dict[str, int]]]:
-
-        players = list(all_params.keys())
-        equilibria: list[tuple[frozendict[str, Params], dict[str, int]]] = []
-
-        # Cartesian product of all strategies for all players
-        for strategies, values in table.items():
-
-            is_equilibrium = True
-            for player in players:
-                current_payoff = values[player]
-                # Check deviations for this player
-                for alt_strategy in all_params[player]:
-                    if alt_strategy == strategies[player]:
-                        continue
-
-                    deviated_profile = dict(strategies)
-                    deviated_profile[player] = alt_strategy
-                    alt_payoff = table[frozendict(deviated_profile)][player]
-
-                    if alt_payoff > current_payoff:
-                        is_equilibrium = False
-                        break
-
-                if not is_equilibrium:
-                    break
-
-            if is_equilibrium:
-                copy = dict(values)
-                del copy[honest_player]
-                equilibria.append((strategies, copy))
-
-        return equilibria
-
-    @staticmethod
-    def damage_cost_ratio(
-        table: dict[frozendict[str, Params], dict[str, int]],
-        all_params: dict[str, list[Params]],
-        point: frozendict[str, Params],
-        alpha: float,
-    ) -> dict[str, dict[str, Deviation | None]]:
-        result: dict[str, dict[str, Deviation | None]] = {}
-        for player, deviations in all_params.items():
-            result[player] = {}
-            for other_player in all_params:
-                if player == other_player:
-                    continue
-                value = table[point][other_player]
-                best_deviation: Deviation | None = None
-                for deviation in deviations:
-                    new_point = dict(point)
-                    new_point[player] = deviation
-                    new_values = table[frozendict(new_point)]
-                    assert new_values[player] <= table[point][player]
-                    cost = table[point][player] - new_values[player]
-                    damage = value - new_values[other_player]
-                    if damage > 0:
-                        candidate = Deviation(deviation, cost, damage)
-                        if best_deviation is None or best_deviation.ranking(
-                            alpha
-                        ) > candidate.ranking(alpha):
-                            best_deviation = candidate
-                result[player][other_player] = best_deviation
-        return result
-
-def pretty_print_events(events: list[tuple[Slot, str]]) -> None:
-    for slot, event in events:
-        print(f"Slot: {slot.num}: {event}")
-
-def pretty_print_equillibria(
-    eq: tuple[frozendict[str, Params], dict[str, int]], raw_table: dict[frozendict[str, Params], GameReport],
-) -> None:
-    for entity, params in eq[0].items():
-        print(f"{entity}:")
-        for attr, value in params.__dict__.items():
-            print(f"  {attr}={value}")
-        print()
-    print("===================")
-    for entity, reward in eq[1].items():
-        print(f"{entity} => {reward:_}")
-    print()
-    print("EVENTS FOR NASH EQUILLIBRIA:")
-    pretty_print_events(raw_table[eq[0]].events)
-
-
-def pretty_print_deviations(
-    attacks: dict[str, dict[str, Deviation | None]],
-    raw_table: dict[frozendict[str, Params], GameReport],
-    eq: frozendict[str, Params],
-) -> None:
-    for attacker, entry in attacks.items():
-        print("===========================")
-        print(f"Attacker: {attacker}")
-        for attacked, deviation in entry.items():
-            print(f"  Attacked: {attacked}")
-            if deviation is None:
-                print("    -")
-            else:
-                print(f"    COST: {deviation.cost:_} => DAMAGE: {deviation.damage:_}")
-                print(f"    New_params:")
-                for attr, value in deviation.params.__dict__.items():
-                    print(f"      {attr}={value}")
-                print()
-                print("EVENTS:")
-                point = dict(eq)
-                point[attacker] = deviation.params
-                pretty_print_events(raw_table[frozendict(point)].events)
-                print()
-
-
-def main():
-    alpha = int(0.4 * ATTESTATORS_PER_SLOT)
-    beta = int(0.16 * ATTESTATORS_PER_SLOT)
-    honest = ATTESTATORS_PER_SLOT - alpha - beta
-
-    game = Game(
-        base_slot=0,
-        chain_string="HAA",
-        base_reward_unit=int(B * BASE_INCREMENT * 0.2),
-        deadline_reward_unit=0,  # B,
-        deadline_payback_unit=0,  # B,
-        honest_entity="H",
-        adv_entity="A",
-        bribee_entities={"B"},
-        entity_to_voting_power={"H": honest, "A": alpha, "B": beta},
-    )
-    best_adv = AdvParams(censor_from_slot=None, patient=True, break_bad_slot=None)
-    best_bribee = BribeeParams(
-        break_bad_slot=3,
-        censoring_from_slot=None,
-        send_votes_when_able=False,
-        finish_offers_regardless_of_abort=False,
-        last_minute=False,
-        only_sending_to_deadline_proposing_entity=False,
-    )
-
-    single = False
-    if single:
-        engine, events = game.play(best_adv, {"B": best_bribee})
-        info = extract_end_info(engine, "H")
-        print(info.success)
-        print(info.wallet_state.address_to_money)
-    else:
-        raw_table = game.compute_table()
-
-        table = game.convert_table(50_000_000, int(1.8 * 50_000_000), raw_table)
-        # print(table[(best_adv, (best_bribee,))])
-        # exit()
-        all_params = game.all_params()
-        honest_player = game.honest_entity
-        nash = Game.nash_equillibria(table, all_params, honest_player)
-        print(len(nash))
-        eq = max(nash, key=lambda x: x[1]["B"])
-        attacks = Game.damage_cost_ratio(table, all_params, eq[0], alpha=0.5)
-        pretty_print_equillibria(eq, raw_table)
-        print()
-        pretty_print_deviations(attacks, raw_table, eq[0])
-
-
-if __name__ == "__main__":
-    main()
