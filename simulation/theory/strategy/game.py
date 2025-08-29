@@ -18,17 +18,12 @@ from simulation.theory.strategy.honest import HonestStrategy
 from simulation.theory.utils import Slot
 
 
-
-
-
 @dataclass
 class SymbolicRun:
     table: dict[frozendict[str, Params], tuple[Engine, list[tuple[Slot, str]]]]
     all_params: dict[str, list[Params]]
     honest_player: str
     adv_player: str
-
-
 
 
 @dataclass
@@ -196,12 +191,12 @@ class Game:
             bribee: self.all_bribee_strategies(bribee)
             for bribee in self.bribee_entities
         }
-        return  {
+        return {
             self.adv_entity: adv_params,
             **all_bribee_params,
         }
 
-    def compute_table(
+    def run_all(
         self,
     ) -> SymbolicRun:
         adv_params = self.all_adv_strategies()
@@ -209,7 +204,7 @@ class Game:
             bribee: self.all_bribee_strategies(bribee)
             for bribee in self.bribee_entities
         }
-        all_params =  {
+        all_params = {
             self.adv_entity: adv_params,
             **all_bribee_params,
         }
@@ -248,4 +243,3 @@ class Game:
                 result.table[key] = (engine, events)
 
         return result
-

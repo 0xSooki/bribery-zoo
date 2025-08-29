@@ -165,7 +165,7 @@ class WalletState:
 
         if payment.to_address not in new_address_to_money:
             new_address_to_money[payment.to_address] = 0
-            
+
         new_address_to_money[payment.to_address] += payment.amount
         new_address_to_money[payment.from_address] -= payment.amount
         new_ledger = list(self.ledger)
@@ -184,7 +184,7 @@ class WalletState:
             ledger=self.ledger,
             symbolic_ledger=tuple(new_symbolic_ledger),
         )
-    
+
     def compute_real_address_to_money(self, **kwargs) -> dict[str, int]:
         """
         Substantiates all symbolic payments with the symbols
@@ -197,13 +197,14 @@ class WalletState:
 
             if tx.to_address not in address_to_money:
                 address_to_money[tx.to_address] = 0
-                
+
             address_to_money[tx.to_address] += amount
             address_to_money[tx.from_address] -= amount
         return address_to_money
-    
+
     # def all_ledger(self):
     #    return list(self.ledger) + list(self.symbolic_ledger)
+
 
 @dataclass(frozen=True)
 class Block:

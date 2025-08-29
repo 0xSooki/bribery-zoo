@@ -55,7 +55,7 @@ def test_game_success_test(
             **({"C": bribee2_voting_power} if bribee2_voting_power else {}),
         },
     )
-    run = game.compute_table()
+    run = game.run_all()
     game_params = GameParams(
         block_reward=-1,
         success_reward=1,
@@ -124,7 +124,7 @@ def test_game_AHA(
         deadline_reward_unit=deadline_reward_unit,
         deadline_payback_unit=deadline_payback_unit,
     )
-    run = game.compute_table()
+    run = game.run_all()
     table = concrete_table(
         run=run,
         game_params=game_params,
@@ -417,7 +417,7 @@ def test_game_HAA(
             "B": bribee_voting_power,
         },
     )
-    run = game.compute_table()
+    run = game.run_all()
     game_params = GameParams(
         block_reward=0,
         success_reward=0,
