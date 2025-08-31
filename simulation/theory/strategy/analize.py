@@ -4,6 +4,7 @@ from numbers import Real
 import os
 import pickle
 import time
+from typing import Sequence
 
 from frozendict import frozendict
 import numpy as np
@@ -15,9 +16,12 @@ from simulation.theory.strategy.base import Params
 from simulation.theory.strategy.bribee import BribeeParams
 from simulation.theory.strategy.game_optim import (
     GameParams,
+    Games,
     PreGameOutcome,
     apply_params,
     best_case_reward,
+    cannot_make_it_worse,
+    deviation,
     fast_nash_equillibria,
     get_params,
     precompile_table,
@@ -334,50 +338,80 @@ class Analizer:
                 )
             print("Games saved")
 
+        self.base_strategies = {
+            entity: (
+                AdvParams(
+                    censor_from_slot=None,
+                    patient=True,
+                    break_bad_slot=0,
+                )
+                if entity == self.adv_entity
+                else BribeeParams(
+                    break_bad_slot=0,
+                    censoring_from_slot=None,
+                    send_votes_when_able=False,
+                    finish_offers_regardless_of_abort=False,
+                    last_minute=False,
+                    only_sending_to_deadline_proposing_entity=False,
+                )
+            )
+            for entity in self.all_params
+        }
+        self.base_big_index = [
+            self.params_to_index[entity][param]
+            for entity, param in self.base_strategies.items()
+        ]
+
     def search_equillibrias(
         self, step: int, block_reward: int, success_reward: int, upper_bound: int
-    ) -> dict[GameParams, tuple[bool, dict[str, int]]]:
+    ) -> dict[GameParams, Games | None]:
         filename = os.path.join(
             self.base_folder, f"{block_reward=},{success_reward=}.pkl"
         )
 
-        result: dict[GameParams, tuple[bool, dict[str, int]]] = {}
+        result: dict[GameParams, Games | None] = {}
         if os.path.exists(filename):
             with open(filename, "rb") as f:
                 result = pickle.load(f)
 
-        bar = tqdm(total=((upper_bound + 1) // step) ** 3, desc="Tables calculated")
+        bar = tqdm(total=(1 + upper_bound // step) ** 3, desc="Tables calculated")
         try:
-            for base_reward_unit in range(0, upper_bound + 1, step):
-                for deadline_reward_unit in range(0, upper_bound + 1, step):
-                    for deadline_payback_unit in range(0, upper_bound + 1, step):
-                        bar.update(1)
-                        game_params = GameParams(
-                            block_reward=block_reward,
-                            success_reward=success_reward,
-                            base_reward_unit=base_reward_unit,
-                            deadline_reward_unit=deadline_reward_unit,
-                            deadline_payback_unit=deadline_payback_unit,
-                        )
-                        if (
-                            base_reward_unit == 2600
-                            and deadline_reward_unit == 0
-                            and deadline_payback_unit == 0
-                        ):
-                            pass
-                        if game_params in result:
-                            continue
-                        rewards = apply_params(self.weight_array, game_params)
-                        equill = fast_nash_equillibria(rewards)
-                        success, indices, entity_to_rewards = best_case_reward(
-                            self.weight_array,
-                            rewards,
-                            equill,
-                            self.all_params,
-                            self.adv_entity,
-                        )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                for base_reward_unit in range(0, upper_bound + 1, step):
+                    for deadline_reward_unit in range(0, upper_bound + 1, step):
+                        for deadline_payback_unit in range(0, upper_bound + 1, step):
+                            bar.update(1)
+                            game_params = GameParams(
+                                block_reward=block_reward,
+                                success_reward=success_reward,
+                                base_reward_unit=base_reward_unit,
+                                deadline_reward_unit=deadline_reward_unit,
+                                deadline_payback_unit=deadline_payback_unit,
+                            )
 
-                        result[game_params] = (success, entity_to_rewards)
+                            if game_params in result:
+                                continue
+                            rewards = apply_params(self.weight_array, game_params)
+                            base_strategy_rewards: list[float] = [
+                                rewards[idx, *self.base_big_index]
+                                for idx, _ in enumerate(self.all_params)
+                            ]
+                            filtered_pts = cannot_make_it_worse(
+                                rewards,
+                                base_strategy_rewards,
+                                self.all_params,
+                                self.adv_entity,
+                            )
+                            equill = fast_nash_equillibria(rewards)
+
+                            result[game_params] = best_case_reward(
+                                self.weight_array,
+                                rewards,
+                                equill & filtered_pts,
+                                self.all_params,
+                                self.adv_entity,
+                            )
+
         except KeyboardInterrupt as ki:
             with open(filename, "wb") as f:
                 pickle.dump(result, f)
@@ -389,49 +423,62 @@ class Analizer:
         return result
 
     def most_profiting_succesful_forks(
-        self, table: dict[GameParams, tuple[bool, dict[str, int]]]
-    ) -> tuple[GameParams, list[dict[str, Params]], int]:
-        game_params = max(
-            [
-                (params, payoffs[self.adv_entity])
-                for params, (success, payoffs) in table.items()
-                if success
-            ],
-            key=lambda x: x[1],
-        )[0]
-        rewards = apply_params(self.weight_array, game_params)
-        equill = fast_nash_equillibria(rewards)
-        _, indices, entity_to_rewards = best_case_reward(
-            self.weight_array,
-            rewards,
-            equill,
-            self.all_params,
-            self.adv_entity,
-        )
-        strategies = [
-            {
-                entity: self.index_to_params[entity][idx]
-                for idx, entity in zip(index, self.all_params)
-            }
-            for index in indices
+        self,
+        table: dict[GameParams, Games | None],
+        max_ratio: float,
+    ) -> tuple[GameParams, dict[str, Params], int, Sequence[float], dict[str, float]] | None:
+        def eval_games(games: Games) -> float:
+            return (
+                games.entity_to_reward[self.adv_entity]
+                if any(max(ratios) <= max_ratio for ratios in games.damage_cost_ratios)
+                else float("-inf")
+            )
+
+        successful_outcomes = [
+            (params, outcome)
+            for params, outcome in table.items()
+            if outcome is not None
+            and outcome.success
         ]
-        return game_params, strategies, entity_to_rewards
+        if not successful_outcomes:
+            return None
+        game_params, games = max(
+            successful_outcomes,
+            key=lambda x: eval_games(x[1])
+        )
+        if eval_games(games) == float("-inf"):
+            return None
+        
+        indices, ratios = max([(indices, ratios) for indices, ratios in zip(games.indices, games.damage_cost_ratios) if max(ratios) <= max_ratio], key=lambda x: sum(x[1]))
+
+        strategy = {
+            entity: self.index_to_params[entity][idx]
+            for idx, entity in zip(indices, self.all_params)
+        }
+        rewards = apply_params(self.weight_array, game_params)
+        base_rewards = {entity: reward for entity, reward in zip(self.all_params, rewards[:, *self.base_big_index])}
+        return game_params, strategy, games.entity_to_reward, ratios, base_rewards
 
 
-if __name__ == "__main__":
+def main():
     analizer = Analizer(
         chain_string="HAA",
         honest_entity="H",
         adv_entity="A",
-        entity_to_alphas={"A": 0.34, "B": 0.19, "C": 0.1},
+        entity_to_alphas={"A": 0.40, "B": 0.14},
     )
     analizer.game()
     table = analizer.search_equillibrias(
-        step=200, upper_bound=4_000, block_reward=50_000_000, success_reward=50_000_000
+        step=200, upper_bound=6_200, block_reward=50_000_000, success_reward=150_000_000
     )
-    game_params, strategies, entity_to_rewards = (
-        analizer.most_profiting_succesful_forks(table)
+    max_ratio = 8
+    best_fork = (
+        analizer.most_profiting_succesful_forks(table, max_ratio)
     )
+    if best_fork is None:
+        print("Not found")
+        return
+    game_params, params, entity_to_rewards, ratios, base_rewards = best_fork
 
     print("Game params:")
     for attr, value in game_params.__dict__.items():
@@ -440,10 +487,18 @@ if __name__ == "__main__":
         else:
             print(f"  {attr}={value}")
     print()
-    for entity, strategy in strategies[0].items():
-        print(f"Entity: {entity} => {entity_to_rewards[entity]:_}")
-        for attr, value in strategy.__dict__.items():
+    for entity, params in params.items():
+        print(f"Entity: {entity} => {entity_to_rewards[entity]:_} vs {base_rewards[entity]:_}")
+        for attr, value in params.__dict__.items():
             print(f"  {attr}={value}")
         print()
+    print()
+
+    for entity, ratio in zip(analizer.all_params, ratios):
+        print(f"  {entity} => {ratio}")
+    #print(f"damage_cost_ratio={ratios}")
+    #print(f"{len(table[game_params].indices)=}")
 
     # main()
+if __name__ == "__main__":
+    main()

@@ -10,6 +10,15 @@ from simulation.theory.utils import Slot
 import numpy as np
 
 
+@dataclass
+class Games:
+    success: bool
+    indices: Sequence[Sequence[int]]
+
+    entity_to_reward: dict[str, int]
+    damage_cost_ratios: Sequence[Sequence[float]]
+
+
 @dataclass(frozen=True)
 class GameParams:
     block_reward: int
@@ -55,7 +64,7 @@ def precompile_table(
     sizes = [6, len(run.all_params)] + [
         len(params) for params in run.all_params.values()
     ]
-    array = np.zeros(shape=sizes, dtype=np.int64)
+    weight_array = np.zeros(shape=sizes, dtype=np.int64)
 
     index_to_params: dict[str, dict[int, Params]] = {}
     params_to_index: dict[str, dict[Params, int]] = {}
@@ -112,20 +121,24 @@ def precompile_table(
 
         for player_idx, player in enumerate(run.all_params):
             arr_idx = [0, player_idx] + base_idx
-            array[*arr_idx] = wallet_state.address_to_money.get(player, 0)
+            weight_array[*arr_idx] = wallet_state.address_to_money.get(player, 0)
             arr_idx = [1, player_idx] + base_idx
             if player == run.adv_player:
-                array[*arr_idx] = int(success)
+                weight_array[*arr_idx] = int(success)
             arr_idx = [2, player_idx] + base_idx
-            array[*arr_idx] = entity_to_blocks[player]
+            weight_array[*arr_idx] = entity_to_blocks[player]
             arr_idx = [3, player_idx] + base_idx
-            array[*arr_idx] = entity_to_symbol_to_amount[player]["base_reward"]
+            weight_array[*arr_idx] = entity_to_symbol_to_amount[player]["base_reward"]
             arr_idx = [4, player_idx] + base_idx
-            array[*arr_idx] = entity_to_symbol_to_amount[player]["deadline_reward"]
+            weight_array[*arr_idx] = entity_to_symbol_to_amount[player][
+                "deadline_reward"
+            ]
             arr_idx = [5, player_idx] + base_idx
-            array[*arr_idx] = entity_to_symbol_to_amount[player]["deadline_payback"]
+            weight_array[*arr_idx] = entity_to_symbol_to_amount[player][
+                "deadline_payback"
+            ]
 
-    return table, params_to_index, index_to_params, array
+    return table, params_to_index, index_to_params, weight_array
 
 
 def apply_params(array: np.ndarray, game_params: GameParams) -> np.ndarray:
@@ -173,7 +186,9 @@ def best_case_reward(
     equillbria: np.ndarray,
     all_params: dict[str, list[Params]],
     adv_player: str,
-):
+) -> Games | None:
+    if np.sum(equillbria) == 0:
+        return None
     adv_idx = list(all_params).index(adv_player)
     success = weight_array[1, adv_idx]
     max_val: int = 0
@@ -206,4 +221,50 @@ def best_case_reward(
     max_rewards = reward[:, *indices[0]]
     assert list(max_rewards) == [entity_to_reward[entity] for entity in all_params]
 
-    return bool(np.sum(success & everyonehappy)), indices, entity_to_reward
+    deviations = [deviation(reward, index) for index in indices]
+
+    return Games(
+        success=bool(np.sum(success & everyonehappy)),
+        indices=indices,
+        entity_to_reward=entity_to_reward,
+        damage_cost_ratios=deviations,
+    )
+
+
+def cannot_make_it_worse(
+    reward: np.ndarray,
+    min_values: list[int],
+    all_params: dict[str, list[Params]],
+    adv_player: str,
+) -> np.ndarray:
+    result = np.ones(shape=reward.shape[1:], dtype=bool)
+    for idx, player in enumerate(all_params):
+        if player == adv_player:
+            result &= min_values[idx] <= reward[idx]
+        else:
+            for deviating_idx, deviating_player in enumerate(all_params):
+                if deviating_player == player:
+                    continue
+                result &= min_values[idx] <= reward[idx].min(
+                    axis=deviating_idx, keepdims=True
+                )
+
+    return result
+
+
+def deviation(reward: np.ndarray, point: Sequence[int]) -> list[float]:
+    N: int = reward.shape[0]
+    orig_rewards = reward[:, *point]
+    result = [float("-inf")] * N
+    
+    for player_idx in range(N):
+        for other_idx in range(N):
+            if player_idx == other_idx:
+                continue
+            slicer = [slice(None) if i == other_idx else point[i] for i in range(N)]
+            costs = orig_rewards[other_idx] - reward[other_idx, *slicer]
+            assert np.all(costs >= 0)
+            damage = orig_rewards[player_idx] - reward[player_idx, *slicer]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                result[player_idx] = np.nanmax([np.nanmax(damage / costs), result[player_idx]])
+    return result
