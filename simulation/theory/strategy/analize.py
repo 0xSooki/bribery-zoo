@@ -391,6 +391,8 @@ class Analizer:
 
                             if game_params in result:
                                 continue
+                            if success_reward > 50_000_000 and base_reward_unit == 4_000 and deadline_reward_unit == 2_400 and deadline_payback_unit == 800:
+                                pass
                             rewards = apply_params(self.weight_array, game_params)
                             base_strategy_rewards: list[float] = [
                                 rewards[idx, *self.base_big_index]
@@ -441,12 +443,14 @@ class Analizer:
             and outcome.success
         ]
         if not successful_outcomes:
+            print("NO SUCCESS")
             return None
         game_params, games = max(
             successful_outcomes,
             key=lambda x: eval_games(x[1])
         )
         if games.best_deviation > max_ratio:
+            print("TOO MUCH")
             return None
         
         indices, ratios = min([(indices, ratios) for indices, ratios in zip(games.indices, games.damage_cost_ratios) if max(ratios) <= max_ratio], key=lambda x: sum(x[1]))
@@ -458,19 +462,58 @@ class Analizer:
         rewards = apply_params(self.weight_array, game_params)
         base_rewards = {entity: reward for entity, reward in zip(self.all_params, rewards[:, *self.base_big_index])}
         return game_params, strategy, games.entity_to_reward, ratios, base_rewards
+    
+    def find_minimal_success_value(self, block_reward: int, step: int, upper_bound: int, max_ratio: float, min_success: int, max_success: int, accuraccy: int) -> int:
+        reward_to_enough: dict[int, bool] = {}
+        
+        def eval(success_reward: int) -> bool:
+            table = self.search_equillibrias(step, block_reward, success_reward, upper_bound)
+            result = self.most_profiting_succesful_forks(table, max_ratio)
+            reward_to_enough[min_success] = result is not None
+            return reward_to_enough[min_success]
+        
+        
+        if eval(min_success):
+            return min_success
+        
+        assert eval(max_success)
+
+        lower, upper = min_success, max_success
+        while upper - lower > accuraccy:
+            mid = (upper + lower) // 2
+            if eval(mid):
+                upper = mid
+            else:
+                lower = mid
+        
+        return upper
+                
+            
+
 
 
 def main():
     analizer = Analizer(
-        chain_string="HAA",
+        chain_string="BHA",
         honest_entity="H",
         adv_entity="A",
-        entity_to_alphas={"A": 0.3, "B": 0.35},
+        entity_to_alphas={"A": 0.12, "B": 0.09},
     )
     analizer.game()
-    table = analizer.search_equillibrias(
-        step=200, upper_bound=6_200, block_reward=50_000_000, success_reward=75_000_000
+    #table = analizer.search_equillibrias(
+    #    step=200, upper_bound=6_200, block_reward=50_000_000, success_reward=75_000_000
+    #)
+    min_success = analizer.find_minimal_success_value(
+        block_reward=50_000_000,
+        step=200,
+        upper_bound=7_200,
+        max_ratio=float("inf"),
+        min_success=10_000_000,
+        max_success=266_000_000,
+        accuraccy=5_000_000,
     )
+    print(f"{min_success:_}")
+    return
     max_ratio = 2
     best_fork = (
         analizer.most_profiting_succesful_forks(table, max_ratio)

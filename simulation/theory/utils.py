@@ -109,3 +109,16 @@ class Slot:
         if self.num == other.num:
             return self.phase < other.phase
         return self.num < other.num
+
+def min_voting_power(alpha: float, chain_str: str, honest_entity: str = "H") -> bool:
+    if chain_str[0] == honest_entity:
+        for non_honest, chr in enumerate(chain_str):
+            if chr != honest_entity:
+                break
+        return (len(chain_str) - 1) * (1 - alpha) < alpha * (len(chain_str) - 1 - non_honest) + PROPOSER_BOOST
+    else:
+        for first_H, chr in enumerate(chain_str):
+            if chr == honest_entity:
+                break
+
+        return (1 - alpha) * (len(chain_str) - 1 - first_H) < alpha * (len(chain_str) - 1) + PROPOSER_BOOST
