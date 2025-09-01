@@ -5,6 +5,8 @@ from simulation.theory.strategy.game_optim import (
     GameParams,
     apply_params,
     base_index,
+    deviation,
+    deviation_vectorized,
     fast_nash_equillibria,
     precompile_table,
 )
@@ -14,6 +16,8 @@ from simulation.theory.utils import ATTESTATORS_PER_SLOT
 
 arguments = [
     ("AHA", 0.1, 0.14, 1000, 200302, 1046, 7381, 208),
+    ("AHA", 0.14, 0.08, 50_000_000, 50_000_000, 5_2000, 4_000, 800),
+    ("HAA", 0.44, 0.1, 50_000_000, 100_000_000, 5_2000, 4_000, 800),
 ]
 
 
@@ -79,3 +83,11 @@ def test_rewards_matching(
     for params in equill:
         big_index = base_index(params, params_to_index)
         assert fast_equill[*big_index]
+    
+    fast_deviation = deviation_vectorized(fast_rewards)
+    eq_points = np.argwhere(fast_equill)
+    
+    for point in eq_points:
+        slow_deviation = deviation(fast_rewards, point)
+        for i in range(fast_rewards.shape[0]):
+            assert (np.isnan(slow_deviation[i]) and np.isnan(fast_deviation[i][*point])) or slow_deviation[i] == fast_deviation[i][*point]

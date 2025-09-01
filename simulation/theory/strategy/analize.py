@@ -430,7 +430,7 @@ class Analizer:
         def eval_games(games: Games) -> float:
             return (
                 games.entity_to_reward[self.adv_entity]
-                if any(max(ratios) <= max_ratio for ratios in games.damage_cost_ratios)
+                if games.best_deviation <= max_ratio
                 else float("-inf")
             )
 
@@ -446,10 +446,10 @@ class Analizer:
             successful_outcomes,
             key=lambda x: eval_games(x[1])
         )
-        if eval_games(games) == float("-inf"):
+        if games.best_deviation > max_ratio:
             return None
         
-        indices, ratios = max([(indices, ratios) for indices, ratios in zip(games.indices, games.damage_cost_ratios) if max(ratios) <= max_ratio], key=lambda x: sum(x[1]))
+        indices, ratios = min([(indices, ratios) for indices, ratios in zip(games.indices, games.damage_cost_ratios) if max(ratios) <= max_ratio], key=lambda x: sum(x[1]))
 
         strategy = {
             entity: self.index_to_params[entity][idx]
@@ -465,13 +465,13 @@ def main():
         chain_string="HAA",
         honest_entity="H",
         adv_entity="A",
-        entity_to_alphas={"A": 0.40, "B": 0.14},
+        entity_to_alphas={"A": 0.3, "B": 0.35},
     )
     analizer.game()
     table = analizer.search_equillibrias(
-        step=200, upper_bound=6_200, block_reward=50_000_000, success_reward=150_000_000
+        step=200, upper_bound=6_200, block_reward=50_000_000, success_reward=75_000_000
     )
-    max_ratio = 8
+    max_ratio = 2
     best_fork = (
         analizer.most_profiting_succesful_forks(table, max_ratio)
     )

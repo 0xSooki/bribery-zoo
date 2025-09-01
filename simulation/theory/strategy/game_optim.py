@@ -17,6 +17,7 @@ class Games:
 
     entity_to_reward: dict[str, int]
     damage_cost_ratios: Sequence[Sequence[float]]
+    best_deviation: float
 
 
 @dataclass(frozen=True)
@@ -215,19 +216,22 @@ def best_case_reward(
     entity_to_reward[adv_player] = adv_reward
 
     assert np.sum(everyonehappy)
-
+    
+    deviations = deviation_vectorized(reward)
+    best_deviation = np.min(deviations[:, everyonehappy].max(axis=0))
     indices = np.argwhere(everyonehappy)
 
     max_rewards = reward[:, *indices[0]]
     assert list(max_rewards) == [entity_to_reward[entity] for entity in all_params]
 
-    deviations = [deviation(reward, index) for index in indices]
+    deviations = [[dev[*index] for dev in deviations] for index in indices] # [deviation(reward, index) for index in indices]
 
     return Games(
         success=bool(np.sum(success & everyonehappy)),
         indices=indices,
         entity_to_reward=entity_to_reward,
-        damage_cost_ratios=deviations,
+        damage_cost_ratios=np.array(deviations),
+        best_deviation=best_deviation
     )
 
 
@@ -255,7 +259,7 @@ def cannot_make_it_worse(
 def deviation(reward: np.ndarray, point: Sequence[int]) -> list[float]:
     N: int = reward.shape[0]
     orig_rewards = reward[:, *point]
-    result = [float("-inf")] * N
+    result = [float("nan")] * N
     
     for player_idx in range(N):
         for other_idx in range(N):
@@ -268,3 +272,35 @@ def deviation(reward: np.ndarray, point: Sequence[int]) -> list[float]:
             with np.errstate(divide="ignore", invalid="ignore"):
                 result[player_idx] = np.nanmax([np.nanmax(damage / costs), result[player_idx]])
     return result
+
+def deviation_vectorized(reward: np.ndarray) -> list[np.ndarray]:
+    N: int = reward.shape[0]
+    result: list[np.ndarray] = []
+    for orig_player in range(N):
+        max_deviation = np.full(shape=reward.shape[1:], fill_value=np.nan, dtype=np.float64)
+        for other_player in range(N):
+            if orig_player == other_player:
+                continue
+            
+            current_deviation = np.full(reward.shape[1:], fill_value=2 * np.max(reward) + 1, dtype=np.int64)
+            max_other_players_rewards = reward[other_player].max(axis=other_player, keepdims=True)
+            max_other_players_rewards = np.broadcast_to(max_other_players_rewards, reward.shape[1:])
+            
+            max_mask = reward[other_player] == max_other_players_rewards
+            cost = max_other_players_rewards - reward[other_player]
+            current_deviation[max_mask] = reward[orig_player][max_mask]
+            biggest_damage = np.min(current_deviation, axis=other_player, keepdims=True)
+            biggest_damage = np.broadcast_to(biggest_damage, reward.shape[1:])
+            
+            eq_value = np.nanmax(np.array(biggest_damage - reward[orig_player], dtype=np.float64) / cost, axis=other_player, keepdims=True)
+            eq_value = np.broadcast_to(eq_value, reward.shape[1:])
+            
+            best_eq_mask = max_mask & (biggest_damage == reward[orig_player])
+            
+            current_deviation = np.array(current_deviation, dtype=np.float64)
+            current_deviation[best_eq_mask] = eq_value[best_eq_mask]
+            max_deviation[~best_eq_mask] = np.inf
+            
+            max_deviation = np.fmax(max_deviation, current_deviation)
+        result.append(max_deviation)
+    return np.array(result)
