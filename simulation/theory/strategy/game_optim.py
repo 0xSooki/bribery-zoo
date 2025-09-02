@@ -242,16 +242,8 @@ def cannot_make_it_worse(
     adv_player: str,
 ) -> np.ndarray:
     result = np.ones(shape=reward.shape[1:], dtype=bool)
-    for idx, player in enumerate(all_params):
-        if player == adv_player:
-            result &= min_values[idx] <= reward[idx]
-        else:
-            for deviating_idx, deviating_player in enumerate(all_params):
-                if deviating_player == player:
-                    continue
-                result &= min_values[idx] <= reward[idx].min(
-                    axis=deviating_idx, keepdims=True
-                )
+    for idx, _ in enumerate(all_params):
+        result &= min_values[idx] <= reward[idx]      
 
     return result
 

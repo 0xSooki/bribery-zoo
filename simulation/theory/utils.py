@@ -4,7 +4,8 @@ import math
 SLOTS_PER_EPOCH = 32
 NUM_OF_VALIDATORS = 1_000_000  # must be divisable by SLOTS_PER_EPOCH
 ATTESTATORS_PER_SLOT = NUM_OF_VALIDATORS // SLOTS_PER_EPOCH
-PROPOSER_BOOST = int(0.4 * ATTESTATORS_PER_SLOT)
+P_BOOST = 0.4
+PROPOSER_BOOST = int(P_BOOST * ATTESTATORS_PER_SLOT)
 EFFECTIVE_BALANCE_INCREMENT = 1_000_000_000
 BASE_INCREMENT = 32
 BASE_REWARD_FACTOR = 64
@@ -115,7 +116,7 @@ def min_voting_power(alpha: float, chain_str: str, honest_entity: str = "H") -> 
         for non_honest, chr in enumerate(chain_str):
             if chr != honest_entity:
                 break
-        return (len(chain_str) - 1) * (1 - alpha) < alpha * (len(chain_str) - 1 - non_honest) + PROPOSER_BOOST
+        return (len(chain_str) - 1) * (1 - alpha) < alpha * (len(chain_str) - 1 - non_honest) + P_BOOST
     else:
         for first_H, chr in enumerate(chain_str):
             if chr == honest_entity:

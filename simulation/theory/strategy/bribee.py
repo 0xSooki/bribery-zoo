@@ -8,6 +8,16 @@ from simulation.theory.utils import Slot
 
 @dataclass(frozen=True)
 class BribeeParams(Params):
+    """
+    Attributes:
+        break_bad_slot: Bribee behaves honestly after this slot
+        censoring_from_slot: Censors all takeBribe calls except his own from this slot
+        send_votes_when_able: If he has knowledge of a vote (e.g. he receives takeBribe calls to include), he will also broadcast it
+        finish_offers_regardless_of_abort: If the entity accepted any briberies, regardless of a cancelled/aborted attack, he still finishes the offer, grabbing base_reward
+        last_minute: Send votes in the last possible slot (i.e. before deadline)
+        only_sending_to_deadline_proposing_entity: Only sends takeBribe calls to the block proposer. He does not vote and hopes to grab all rewards. His vote will be useless, unless the block proposer broadcasts these votes
+    """
+    
     break_bad_slot: int | None
     censoring_from_slot: int | None
     send_votes_when_able: bool

@@ -1,9 +1,6 @@
 from dataclasses import dataclass
-import math
-from numbers import Real
 
-from frozendict import frozendict
-from simulation.theory.action import OfferBribery, SingleOfferBribery, TakeBribery, Vote
+from simulation.theory.action import OfferBribery, SingleOfferBribery, Vote
 from simulation.theory.engine import Engine
 from simulation.theory.strategy.base import IAdvStrategy, Params
 from simulation.theory.utils import PROPOSER_BOOST, Slot
@@ -11,6 +8,12 @@ from simulation.theory.utils import PROPOSER_BOOST, Slot
 
 @dataclass(frozen=True)
 class AdvParams(Params):
+    """
+    Attributes:
+        censor_from_slot: Censors all takeBribe calls from that slot
+        patient: If patient, the adversary will not blacklist a bribee for not voting timely. He only tolerates late votes until the deadline.
+        break_bad_slot: The attack is cancelled/aborted from this slot
+    """
     censor_from_slot: int | None
     patient: bool
     break_bad_slot: int | None
