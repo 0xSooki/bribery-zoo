@@ -89,8 +89,6 @@ contract PayToBias {
     ) external virtual {
         ValidatorAuction storage auction = validatorAuctions[blockNumber];
         require(auction.validator != address(0), "Auction does not exist");
-        // require(!auction.withhold, "Block was withhold");
-        // require(!auction.claimed, "Already claimed");
 
         require(parentHeader.number == blockNumber - 1, "Invalid parent block number");
         require(nextHeader.number == blockNumber, "Invalid next block number");
