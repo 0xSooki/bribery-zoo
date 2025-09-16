@@ -64,7 +64,7 @@ contract PayToExit {
      * @param auctionDeadline When the auction ends
      * @param aggpubkey The validator's public key
      */
-    function offerBribe(uint256 targetEpoch, uint256 auctionDeadline, BLS.G1Point memory aggpubkey, uint256 bribeAmnt)
+    function offerBribe(uint256 targetEpoch, uint256 auctionDeadline, BLS.G1Point memory aggpubkey, uint256 bribeAmount)
         external
         payable
     {
@@ -74,11 +74,11 @@ contract PayToExit {
         auction.epoch = targetEpoch;
         auction.auctionDeadline = auctionDeadline;
         auction.aggpubkey = aggpubkey;
-        auction.bribeAmount = bribeAmnt;
+        auction.bribeAmount = bribeAmount;
         auction.pool = msg.value;
         auction.creator = msg.sender;
 
-        emit AuctionOffered(msg.sender, targetEpoch, bribeAmnt, msg.value, auctionDeadline);
+        emit AuctionOffered(msg.sender, targetEpoch, bribeAmount, msg.value, auctionDeadline);
     }
 
     /**
