@@ -38,13 +38,10 @@ contract PayToExitTest is Test {
         });
 
         vm.prank(validator);
-        payToExit.offerBribe(TARGET_EPOCH, AUCTION_DEADLINE, pubkey);
+        payToExit.offerBribe{value: 2 ether}(TARGET_EPOCH, AUCTION_DEADLINE, pubkey, 2);
 
-        PayToExit.ValidatorAuction memory auction = payToExit.getAuction(address(validator));
-        assertEq(auction.epoch, TARGET_EPOCH);
-        assertEq(auction.auctionDeadline, AUCTION_DEADLINE);
-        assertFalse(auction.exited);
-        assertFalse(auction.claimed);
+        uint256 bribe = payToExit.bribeAmnt(address(validator));
+        assertEq(bribe, 2);
 
         bytes32[] memory proof = new bytes32[](3);
         proof[0] = 0x5038da95330ba16edb486954197e37eb777c3047327ca54df4199c35c5edc17a; // sibling of pubkeyHash
