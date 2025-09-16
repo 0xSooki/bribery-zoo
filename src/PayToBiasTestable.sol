@@ -22,56 +22,8 @@ contract PayToBiasTestable is PayToBias {
         useMockBlockhashes = _useMock;
     }
 
-    function getBlockhash(uint256 blockNumber) internal view returns (bytes32) {
-        if (useMockBlockhashes) {
-            return mockBlockhashes[blockNumber];
-        }
-        return blockhash(blockNumber);
-    }
-
-    /**
-     * @notice Claim that the validator failed to publish by providing 2-block proof
-     * @param blockNumber The block number the validator should have withhold
-     * @param parentHeader The header of block N-1 (before validator's slot)
-     * @param nextHeader The header of block N+1 (after validator's slot)
-     */
-    function takeBribe(
-        uint256 blockNumber,
-        HeaderVerify.BlockHeader memory parentHeader,
-        HeaderVerify.BlockHeader memory nextHeader
-    ) external override {
-        ValidatorAuction storage auction = validatorAuctions[blockNumber];
-        require(auction.validator != address(0), "Auction does not exist");
-        require(!auction.withhold, "Block was withhold");
-        require(!auction.claimed, "Already claimed");
-
-        // Verify block numbers
-        require(parentHeader.number == blockNumber - 1, "Invalid parent block number");
-        require(nextHeader.number == blockNumber, "Invalid next block number");
-
-        // Get canonical block hashes from blockhash function (or mock)
-        bytes32 parentHash = getBlockhash(blockNumber - 1);
-        bytes32 nextHash = getBlockhash(blockNumber);
-
-        // Ensure blocks are within the 256-block window for blockhash availability
-        require(parentHash != bytes32(0), "Parent block hash not available");
-        require(nextHash != bytes32(0), "Next block hash not available");
-
-        // Verify block headers
-        require(headerVerify.verifyBlockHash(parentHeader, parentHash), "Invalid parent block header or hash");
-        require(headerVerify.verifyBlockHash(nextHeader, nextHash), "Invalid next block header or hash");
-
-        require(
-            nextHeader.parentHash == parentHash,
-            "Next block should point to parent, proving validator block was skipped"
-        );
-
-        uint256 timeGap = nextHeader.timestamp - parentHeader.timestamp;
-
-        if (timeGap > BLOCK_TIME + 4) {
-            auction.withhold = true;
-        }
-
-        _resolveAuction(blockNumber);
+    function _getBlockHash(uint256 blockNumber) internal view override returns (bytes32) {
+        if (useMockBlockhashes) return mockBlockhashes[blockNumber];
+        return super._getBlockHash(blockNumber);
     }
 }

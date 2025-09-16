@@ -28,6 +28,9 @@ contract PayToBiasTest is Test {
 
         vm.roll(1100);
 
+        vm.roll(0);
+        assertEq(block.number, 0);
+
         payToBias.setUseMockBlockhashes(true);
     }
 
@@ -46,30 +49,22 @@ contract PayToBiasTest is Test {
     function testPlaceBids() public {
         vm.prank(validator);
         payToBias.createAuction(BLOCK_NUMBER, AUCTION_DEADLINE);
-
-        // Bidder1 bets on publish
+        // bidder1 funds withhold side (true)
         vm.prank(bidder1);
         payToBias.placeBid{value: 1 ether}(BLOCK_NUMBER, true);
-
-        // Bidder2 bets on withhold
+        // bidder2 funds publish side (false)
         vm.prank(bidder2);
         payToBias.placeBid{value: 2 ether}(BLOCK_NUMBER, false);
-
-        (PayToBias.Bid memory publishBid, PayToBias.Bid memory withholdBid) = payToBias.getHighestBids(BLOCK_NUMBER);
-
-        assertEq(publishBid.bidder, bidder1);
-        assertEq(publishBid.amount, 1 ether);
-        assertTrue(publishBid.publishChoice);
-
-        assertEq(withholdBid.bidder, bidder2);
-        assertEq(withholdBid.amount, 2 ether);
-        assertFalse(withholdBid.publishChoice);
+        (uint256 withholdTotal, uint256 publishTotal) = payToBias.getTotals(BLOCK_NUMBER);
+        assertEq(withholdTotal, 1 ether);
+        assertEq(publishTotal, 2 ether);
     }
 
     function testSubmitValidBlockProof() public {
         vm.prank(validator);
         payToBias.createAuction(BLOCK_NUMBER, AUCTION_DEADLINE);
 
+        // publish side funding (false)
         vm.prank(bidder1);
         payToBias.placeBid{value: 1 ether}(BLOCK_NUMBER, false);
 
@@ -233,16 +228,12 @@ contract PayToBiasTest is Test {
         vm.prank(bidder1);
         payToBias.placeBid{value: 1 ether}(BLOCK_NUMBER, true);
 
+        // second contribution from bidder2 to withhold side
         vm.prank(bidder2);
         payToBias.placeBid{value: 2 ether}(BLOCK_NUMBER, true);
-
-        assertEq(payToBias.balances(bidder1), 1 ether);
-
-        uint256 bidder1BalanceBefore = bidder1.balance;
-        vm.prank(bidder1);
-        payToBias.withdrawFunds();
-
-        assertEq(bidder1.balance, bidder1BalanceBefore + 1 ether);
-        assertEq(payToBias.balances(bidder1), 0);
+        (uint256 withholdTotal, uint256 publishTotal) = payToBias.getTotals(BLOCK_NUMBER);
+        // withhold side aggregated (bidder1 1 ether + bidder2 2 ether) but note bidder1 funded withhold in earlier test; here we only track this test context
+        assertEq(withholdTotal, 3 ether);
+        assertEq(publishTotal, 0);
     }
 }
