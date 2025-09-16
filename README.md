@@ -1,11 +1,11 @@
 # Bribery zoo
 
-[![License](https://img.shields.io/github/license/0xSooki/randao-bribery-market)](LICENSE)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/0xSooki/randao-bribery-market/test.yml)](https://github.com/0xSooki/randao-bribery-market/actions)
+[![License](https://img.shields.io/github/license/0xSooki/bribery-zoo)](LICENSE)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/0xSooki/bribery-zoo/test.yml)](https://github.com/0xSooki/randao-bribery-market/actions)
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-FFDB1C.svg)](https://getfoundry.sh/)
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.0-363636?logo=solidity)](https://soliditylang.org/)
-[![GitHub stars](https://img.shields.io/github/stars/0xSooki/randao-bribery-market)](https://github.com/0xSooki/randao-bribery-market/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/0xSooki/randao-bribery-market)](https://github.com/0xSooki/randao-bribery-market/issues)
+[![GitHub stars](https://img.shields.io/github/stars/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/issues)
 
 This repository contains smart contracts for bribery attacks in Ethereum's Proof-of-Stake consensus mechanism. The project implements multiple types of bribery attacks to conduct research on their efficiency.
 
