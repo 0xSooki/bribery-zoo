@@ -7,6 +7,10 @@
 [![GitHub stars](https://img.shields.io/github/stars/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/issues)
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/42e36f00-1082-4016-aafb-c4e4e8cbafcc" alt="bribzoo" width="700">
+</p>
+
 This repository contains smart contracts for bribery attacks in Ethereum's Proof-of-Stake consensus mechanism. The project implements multiple types of bribery attacks to conduct research on their efficiency.
 
 ## 🎯 Overview
