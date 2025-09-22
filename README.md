@@ -4,8 +4,6 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/0xSooki/bribery-zoo/test.yml)](https://github.com/0xSooki/randao-bribery-market/actions)
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-FFDB1C.svg)](https://getfoundry.sh/)
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.0-363636?logo=solidity)](https://soliditylang.org/)
-[![GitHub stars](https://img.shields.io/github/stars/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/0xSooki/randao-bribery-market)](https://github.com/0xSooki/bribery-zoo/issues)
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/42e36f00-1082-4016-aafb-c4e4e8cbafcc" alt="bribzoo" width="700">
